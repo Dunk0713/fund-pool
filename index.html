@@ -1,0 +1,1530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>中欧基金 · 机构产品池查询</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script>
+    // preload PDF.js worker
+    window._pdfjsReady = import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.min.mjs').then(mod => {
+      mod.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs';
+      return mod;
+    });
+  </script>
+  <style>
+    :root {
+      --primary: #0055d4;
+      --primary-light: #e8f0fe;
+      --success: #10b981;
+      --success-bg: #d1fae5;
+      --danger: #ef4444;
+      --danger-bg: #fee2e2;
+      --bg: #f5f6fa;
+      --card: #ffffff;
+      --text: #1a1a2e;
+      --text-secondary: #6b7280;
+      --text-tertiary: #9ca3af;
+      --border: #e5e7eb;
+      --radius: 14px;
+      --radius-sm: 10px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+      --transition: 0.2s ease;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+                   "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior: none;
+    }
+
+    #app {
+      min-height: 100vh;
+      padding-bottom: 72px;
+    }
+
+    /* Header */
+    .header {
+      background: var(--card);
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: -0.3px;
+    }
+    .header h1 span {
+      color: var(--primary);
+    }
+
+    /* Container */
+    .container {
+      max-width: 500px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+
+    /* Bottom Navigation */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--card);
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-around;
+      padding: 8px 0;
+      padding-bottom: max(8px, env(safe-area-inset-bottom));
+      z-index: 200;
+    }
+    .nav-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      padding: 4px 16px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      color: var(--text-tertiary);
+      font-size: 11px;
+      font-weight: 500;
+      transition: color var(--transition);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .nav-item.active { color: var(--primary); }
+    .nav-item svg { width: 24px; height: 24px; }
+
+    /* Cards */
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px;
+      margin-bottom: 12px;
+    }
+
+    /* Form Elements */
+    .input-group {
+      margin-bottom: 14px;
+    }
+    .input-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+    .input-wrap {
+      position: relative;
+    }
+    .input-wrap input,
+    .input-wrap select {
+      width: 100%;
+      height: 48px;
+      padding: 0 16px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-size: 16px;
+      color: var(--text);
+      background: var(--card);
+      outline: none;
+      transition: border-color var(--transition), box-shadow var(--transition);
+      font-family: inherit;
+    }
+    .input-wrap input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(0, 85, 212, 0.1);
+    }
+    .input-wrap input::placeholder {
+      color: var(--text-tertiary);
+    }
+
+    /* Dropdown */
+    .dropdown {
+      position: relative;
+    }
+    .dropdown-list {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: var(--card);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow-md);
+      max-height: 240px;
+      overflow-y: auto;
+      z-index: 50;
+      margin-top: 4px;
+    }
+    .dropdown-item {
+      padding: 12px 16px;
+      font-size: 15px;
+      cursor: pointer;
+      transition: background var(--transition);
+      border-bottom: 1px solid var(--border);
+    }
+    .dropdown-item:last-child { border-bottom: none; }
+    .dropdown-item:active,
+    .dropdown-item:hover { background: var(--primary-light); }
+    .dropdown-item .product-count {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      margin-left: 8px;
+    }
+
+    /* Result Card */
+    .result-card {
+      text-align: center;
+      padding: 32px 20px;
+      border-radius: var(--radius);
+      margin-top: 20px;
+      transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      transform: translateY(8px);
+      opacity: 0;
+    }
+    .result-card.visible {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    .result-card.investable {
+      background: linear-gradient(145deg, #d1fae5, #a7f3d0);
+      border: 2px solid var(--success);
+    }
+    .result-card.not-investable {
+      background: linear-gradient(145deg, #fee2e2, #fecaca);
+      border: 2px solid var(--danger);
+    }
+    .result-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+    .result-text {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .result-card.investable .result-text { color: #065f46; }
+    .result-card.not-investable .result-text { color: #991b1b; }
+    .result-detail {
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+
+    /* Suggestion List */
+    .suggestions {
+      background: var(--card);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      margin-top: 4px;
+      max-height: 200px;
+      overflow-y: auto;
+      box-shadow: var(--shadow-md);
+    }
+    .suggestion-item {
+      padding: 10px 16px;
+      font-size: 14px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      transition: background var(--transition);
+    }
+    .suggestion-item:last-child { border-bottom: none; }
+    .suggestion-item:active { background: var(--primary-light); }
+    .suggestion-item .code {
+      color: var(--primary);
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      height: 44px;
+      padding: 0 20px;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 15px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--transition);
+      font-family: inherit;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+    .btn-primary:active { background: #0044aa; }
+    .btn-outline {
+      background: transparent;
+      color: var(--primary);
+      border: 1.5px solid var(--primary);
+    }
+    .btn-danger {
+      background: transparent;
+      color: var(--danger);
+      border: 1.5px solid var(--danger);
+    }
+    .btn-danger:active { background: var(--danger-bg); }
+    .btn-sm {
+      height: 36px;
+      padding: 0 14px;
+      font-size: 13px;
+    }
+    .btn-block { width: 100%; }
+
+    /* Institution Cards (Manage View) */
+    .inst-card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+    .inst-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      cursor: pointer;
+      transition: background var(--transition);
+    }
+    .inst-header:active { background: #f9fafb; }
+    .inst-name {
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .inst-meta {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      margin-top: 2px;
+    }
+    .inst-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .icon-btn {
+      width: 36px;
+      height: 36px;
+      border: none;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      background: transparent;
+      color: var(--text-tertiary);
+      transition: all var(--transition);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .icon-btn:active { background: #f3f4f6; }
+    .icon-btn.danger:active { background: var(--danger-bg); color: var(--danger); }
+
+    /* Product Table */
+    .product-section {
+      padding: 0 20px 16px;
+      border-top: 1px solid var(--border);
+    }
+    .product-table {
+      width: 100%;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+    .product-table th {
+      text-align: left;
+      padding: 8px 0;
+      font-weight: 500;
+      color: var(--text-secondary);
+      font-size: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .product-table td {
+      padding: 10px 0;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .product-table td:first-child {
+      font-variant-numeric: tabular-nums;
+      color: var(--primary);
+      font-weight: 500;
+      width: 100px;
+    }
+    .product-table td:last-child {
+      width: 40px;
+      text-align: center;
+    }
+    .add-product-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .add-product-row input {
+      flex: 1;
+      height: 40px;
+      padding: 0 12px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+      font-family: inherit;
+    }
+    .add-product-row input:focus {
+      border-color: var(--primary);
+    }
+    .product-search {
+      margin-top: 12px;
+    }
+    .product-search input {
+      width: 100%;
+      height: 40px;
+      padding: 0 12px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+      font-family: inherit;
+    }
+
+    /* Import View */
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 32px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all var(--transition);
+      background: #fafbfc;
+      margin-bottom: 16px;
+    }
+    .upload-zone:active,
+    .upload-zone.dragover {
+      border-color: var(--primary);
+      background: var(--primary-light);
+    }
+    .upload-zone input[type="file"] {
+      display: none;
+    }
+    .upload-icon {
+      font-size: 36px;
+      margin-bottom: 8px;
+    }
+    .upload-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .upload-desc {
+      font-size: 13px;
+      color: var(--text-tertiary);
+    }
+
+    /* Progress Bar */
+    .progress-bar {
+      width: 100%;
+      height: 6px;
+      background: #e5e7eb;
+      border-radius: 3px;
+      overflow: hidden;
+      margin: 12px 0;
+    }
+    .progress-fill {
+      height: 100%;
+      background: var(--primary);
+      border-radius: 3px;
+      transition: width 0.3s ease;
+    }
+
+    /* Preview Table */
+    .preview-section {
+      margin-top: 16px;
+    }
+    .preview-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .preview-header h3 {
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .preview-count {
+      font-size: 13px;
+      color: var(--text-tertiary);
+    }
+    .preview-table {
+      width: 100%;
+      font-size: 13px;
+      border-collapse: collapse;
+    }
+    .preview-table th {
+      text-align: left;
+      padding: 8px 6px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      font-size: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .preview-table td {
+      padding: 8px 6px;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .preview-table td input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 13px;
+      outline: none;
+      font-family: inherit;
+    }
+    .preview-table td input:focus { border-color: var(--primary); }
+    .preview-table .warn {
+      background: #fef3c7;
+    }
+    .preview-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      top: 72px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-8px);
+      background: var(--text);
+      color: white;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      z-index: 1000;
+      opacity: 0;
+      transition: all 0.3s ease;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* Modal */
+    .modal-mask {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 300;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .modal-content {
+      background: var(--card);
+      border-radius: 16px 16px 0 0;
+      width: 100%;
+      max-width: 500px;
+      max-height: 80vh;
+      overflow-y: auto;
+      padding: 24px 20px;
+      padding-bottom: max(24px, env(safe-area-inset-bottom));
+    }
+    .modal-title {
+      font-size: 17px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 48px 20px;
+      color: var(--text-tertiary);
+    }
+    .empty-state .empty-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+    .empty-state p {
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    /* Section Title */
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+    }
+
+    /* Checkbox */
+    .checkbox-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .checkbox-wrap input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--primary);
+    }
+
+    /* Utility */
+    .mt-8 { margin-top: 8px; }
+    .mt-12 { margin-top: 12px; }
+    .mt-16 { margin-top: 16px; }
+    .mb-12 { margin-bottom: 12px; }
+    .flex-between {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .text-sm { font-size: 13px; }
+    .text-muted { color: var(--text-tertiary); }
+
+    /* Animations */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .fade-in {
+      animation: fadeInUp 0.3s ease forwards;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
+
+    /* Desktop */
+    @media (min-width: 640px) {
+      .container { padding: 24px; }
+      .header { padding: 20px 24px; }
+      .header h1 { font-size: 20px; }
+    }
+
+    /* backup/export bar */
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Toast -->
+  <div class="toast" :class="{show: toast.visible}">{{ toast.message }}</div>
+
+  <!-- Header -->
+  <div class="header">
+    <h1><span>中欧基金</span> · 机构产品池查询</h1>
+  </div>
+
+  <!-- Query View -->
+  <div class="container" v-if="currentView === 'query'">
+    <!-- Institution Selector -->
+    <div class="input-group">
+      <label>选择机构客户</label>
+      <div class="dropdown">
+        <div class="input-wrap">
+          <input
+            type="text"
+            v-model="instSearchText"
+            @focus="showInstDropdown = true"
+            @input="showInstDropdown = true"
+            placeholder="搜索或选择机构..."
+          >
+        </div>
+        <div class="dropdown-list" v-if="showInstDropdown && filteredInstitutions.length > 0" @mousedown.prevent>
+          <div
+            class="dropdown-item"
+            v-for="inst in filteredInstitutions"
+            :key="inst.id"
+            @click="selectInstitution(inst)"
+          >
+            {{ inst.name }}
+            <span class="product-count">{{ inst.products.length }}只产品</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fund Query -->
+    <div class="input-group" v-if="selectedInstitution">
+      <label>查询基金产品</label>
+      <div class="input-wrap">
+        <input
+          type="text"
+          v-model="fundQuery"
+          @input="onFundQueryInput"
+          placeholder="输入基金代码或名称..."
+          ref="fundInput"
+        >
+      </div>
+      <!-- Suggestions -->
+      <div class="suggestions" v-if="fundQuery && fundSuggestions.length > 0 && !queryResult">
+        <div
+          class="suggestion-item"
+          v-for="p in fundSuggestions"
+          :key="p.code"
+          @click="selectFund(p)"
+        >
+          <span>{{ p.name }}</span>
+          <span class="code">{{ p.code }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Result -->
+    <div
+      v-if="queryResult"
+      class="result-card"
+      :class="[queryResult, { visible: resultVisible }]"
+    >
+      <div class="result-icon">{{ queryResult === 'investable' ? '✅' : '❌' }}</div>
+      <div class="result-text">{{ queryResult === 'investable' ? '可投资' : '不可投资' }}</div>
+      <div class="result-detail" v-if="queryResult === 'investable' && matchedFund">
+        {{ matchedFund.code }} {{ matchedFund.name }}
+      </div>
+      <div class="result-detail" v-if="queryResult === 'not-investable'">
+        {{ selectedInstitution.name }} 的产品池中未找到该产品
+      </div>
+    </div>
+
+    <!-- Empty state -->
+    <div class="empty-state" v-if="institutions.length === 0">
+      <div class="empty-icon">📋</div>
+      <p>还没有机构数据<br>请先在「管理」中添加机构<br>或在「导入」中上传产品池</p>
+    </div>
+  </div>
+
+  <!-- Manage View -->
+  <div class="container" v-if="currentView === 'manage'">
+    <div class="toolbar">
+      <button class="btn btn-primary btn-sm" @click="showAddInstModal = true">+ 新增机构</button>
+      <button class="btn btn-outline btn-sm" @click="exportData">导出备份</button>
+      <button class="btn btn-outline btn-sm" @click="$refs.importJsonInput.click()">导入备份</button>
+      <input type="file" ref="importJsonInput" accept=".json" style="display:none" @change="importBackup">
+    </div>
+
+    <div v-if="institutions.length === 0" class="empty-state">
+      <div class="empty-icon">🏢</div>
+      <p>暂无机构客户<br>点击上方「+ 新增机构」添加</p>
+    </div>
+
+    <div class="inst-card" v-for="inst in institutions" :key="inst.id">
+      <div class="inst-header" @click="toggleExpand(inst.id)">
+        <div>
+          <div class="inst-name">{{ inst.name }}</div>
+          <div class="inst-meta">{{ inst.products.length }} 只产品</div>
+        </div>
+        <div class="inst-actions" @click.stop>
+          <button class="icon-btn danger" @click="confirmDeleteInst(inst)" title="删除">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Expanded Product Section -->
+      <div class="product-section" v-if="expandedInst === inst.id">
+        <div class="product-search">
+          <input v-model="productSearchText" placeholder="搜索产品...">
+        </div>
+        <table class="product-table">
+          <thead>
+            <tr><th>代码</th><th>名称</th><th></th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="p in filteredProducts(inst)" :key="p.code">
+              <td>{{ p.code }}</td>
+              <td>{{ p.name }}</td>
+              <td>
+                <button class="icon-btn danger" @click="removeProduct(inst, p.code)" style="width:28px;height:28px;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="add-product-row">
+          <input v-model="newProductCode" placeholder="如005787.OF" style="max-width:120px;">
+          <input v-model="newProductName" placeholder="名称">
+          <button class="btn btn-primary btn-sm" @click="addProduct(inst)">添加</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Institution Modal -->
+    <div class="modal-mask" v-if="showAddInstModal" @click.self="showAddInstModal = false">
+      <div class="modal-content">
+        <div class="modal-title">新增机构客户</div>
+        <div class="input-group">
+          <label>机构名称</label>
+          <div class="input-wrap">
+            <input
+              v-model="newInstName"
+              placeholder="请输入机构名称"
+              @keyup.enter="addInstitution"
+              ref="newInstInput"
+            >
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn btn-outline btn-sm" @click="showAddInstModal = false">取消</button>
+          <button class="btn btn-primary btn-sm" @click="addInstitution">确认添加</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete Confirm Modal -->
+    <div class="modal-mask" v-if="deleteTarget" @click.self="deleteTarget = null">
+      <div class="modal-content">
+        <div class="modal-title">确认删除</div>
+        <p style="margin-bottom:16px;font-size:15px;">
+          确定要删除「{{ deleteTarget.name }}」及其所有产品数据吗？此操作不可恢复。
+        </p>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn btn-outline btn-sm" @click="deleteTarget = null">取消</button>
+          <button class="btn btn-danger btn-sm" @click="deleteInstitution">确认删除</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import View -->
+  <div class="container" v-if="currentView === 'import'">
+    <!-- Target Institution -->
+    <div class="input-group">
+      <label>选择目标机构</label>
+      <div class="dropdown">
+        <div class="input-wrap">
+          <input
+            type="text"
+            v-model="importInstSearch"
+            @focus="showImportInstDropdown = true"
+            @input="showImportInstDropdown = true"
+            placeholder="搜索机构或输入新机构名称..."
+          >
+        </div>
+        <div class="dropdown-list" v-if="showImportInstDropdown && importFilteredInsts.length > 0" @mousedown.prevent>
+          <div
+            class="dropdown-item"
+            v-for="inst in importFilteredInsts"
+            :key="inst.id"
+            @click="selectImportInst(inst)"
+          >
+            {{ inst.name }}
+            <span class="product-count">{{ inst.products.length }}只产品</span>
+          </div>
+        </div>
+      </div>
+      <div class="mt-8 text-sm text-muted" v-if="importInstSearch && !importTargetInst && importFilteredInsts.length === 0">
+        将为「{{ importInstSearch }}」创建新机构
+      </div>
+    </div>
+
+    <!-- Excel Upload -->
+    <div class="section-title">Excel 导入</div>
+    <div
+      class="upload-zone"
+      :class="{dragover: excelDragover}"
+      @click="$refs.excelInput.click()"
+      @dragover.prevent="excelDragover = true"
+      @dragleave="excelDragover = false"
+      @drop.prevent="handleExcelDrop"
+    >
+      <div class="upload-icon">📄</div>
+      <div class="upload-title">上传 Excel 文件</div>
+      <div class="upload-desc">点击选择或拖拽 .xlsx / .xls 文件</div>
+      <input type="file" ref="excelInput" accept=".xlsx,.xls,.csv" @change="handleExcelUpload">
+    </div>
+
+    <!-- PDF Upload -->
+    <div class="section-title">PDF 导入</div>
+    <div
+      class="upload-zone"
+      @click="$refs.pdfInput.click()"
+    >
+      <div class="upload-icon">📑</div>
+      <div class="upload-title">上传 PDF 文件</div>
+      <div class="upload-desc">自动提取PDF中的基金代码和名称</div>
+      <input type="file" ref="pdfInput" accept=".pdf" @change="handlePdfUpload">
+    </div>
+
+    <!-- Image OCR Upload -->
+    <div class="section-title">图片 OCR 识别</div>
+    <div
+      class="upload-zone"
+      @click="$refs.imageInput.click()"
+    >
+      <div class="upload-icon">📷</div>
+      <div class="upload-title">上传产品池图片</div>
+      <div class="upload-desc">支持拍照或从相册选择</div>
+      <input type="file" ref="imageInput" accept="image/*" capture="environment" @change="handleImageOCR">
+    </div>
+
+    <!-- OCR Progress -->
+    <div v-if="isProcessing" class="card">
+      <div style="font-size:14px;margin-bottom:8px;">{{ ocrStatus }}</div>
+      <div class="progress-bar">
+        <div class="progress-fill" :style="{width: ocrProgress + '%'}"></div>
+      </div>
+    </div>
+
+    <!-- Preview -->
+    <div class="preview-section" v-if="previewProducts.length > 0">
+      <div class="preview-header">
+        <h3>识别结果预览</h3>
+        <span class="preview-count">共 {{ previewProducts.length }} 条</span>
+      </div>
+      <div class="card" style="padding:12px;overflow-x:auto;">
+        <table class="preview-table">
+          <thead>
+            <tr><th style="width:30px;"></th><th style="width:80px;">代码</th><th>名称</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="(p, i) in previewProducts" :key="i" :class="{warn: !isValidCode(p.code)}">
+              <td><input type="checkbox" v-model="p.selected"></td>
+              <td><input v-model="p.code" :class="{warn: !isValidCode(p.code)}"></td>
+              <td><input v-model="p.name"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="preview-actions">
+        <button class="btn btn-primary btn-block" @click="confirmImport">
+          确认导入 ({{ selectedPreviewCount }} 条)
+        </button>
+        <button class="btn btn-outline" @click="previewProducts = []">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom Navigation -->
+  <nav class="bottom-nav">
+    <button class="nav-item" :class="{active: currentView === 'query'}" @click="switchView('query')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      查询
+    </button>
+    <button class="nav-item" :class="{active: currentView === 'manage'}" @click="switchView('manage')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
+      </svg>
+      管理
+    </button>
+    <button class="nav-item" :class="{active: currentView === 'import'}" @click="switchView('import')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      导入
+    </button>
+  </nav>
+</div>
+
+<script>
+const { createApp, ref, computed, watch, nextTick } = Vue;
+
+const SUPABASE_URL = 'https://rghlkwmarqfyksaztang.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJnaGxrd21hcnFmeWtzYXp0YW5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwODk5MTcsImV4cCI6MjA4OTY2NTkxN30.cbwWMVYhPpOuqFcU1ZzvB0Y_S7tqK_E8tBJMBwGebis';
+const db_client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const DB = {
+  async load() {
+    const { data, error } = await db_client.from('institutions').select('*').order('created_at');
+    if (error) { console.error('加载失败:', error); return []; }
+    return data.map(row => ({
+      id: row.id,
+      name: row.name,
+      products: row.products || [],
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    }));
+  },
+  async upsert(inst) {
+    const { error } = await db_client.from('institutions').upsert({
+      id: inst.id,
+      name: inst.name,
+      products: inst.products,
+      updated_at: new Date().toISOString()
+    });
+    if (error) console.error('保存失败:', error);
+    return !error;
+  },
+  async remove(id) {
+    const { error } = await db_client.from('institutions').delete().eq('id', id);
+    if (error) console.error('删除失败:', error);
+    return !error;
+  }
+};
+
+function fuzzyMatch(query, target) {
+  if (!query) return { match: true, score: 0 };
+  query = query.toLowerCase().trim();
+  target = target.toLowerCase();
+  // Exact match
+  if (target === query) return { match: true, score: 100 };
+  // Starts with
+  if (target.startsWith(query)) return { match: true, score: 80 };
+  // Contains
+  if (target.includes(query)) return { match: true, score: 60 };
+  // Code prefix for numbers
+  if (/^\d+$/.test(query) && target.startsWith(query)) return { match: true, score: 70 };
+  // Subsequence match
+  let qi = 0;
+  for (let ti = 0; ti < target.length && qi < query.length; ti++) {
+    if (target[ti] === query[qi]) qi++;
+  }
+  if (qi === query.length) return { match: true, score: 40 };
+  return { match: false, score: 0 };
+}
+
+createApp({
+  data() {
+    return {
+      currentView: 'query',
+      institutions: [],
+
+      // Query
+      instSearchText: '',
+      showInstDropdown: false,
+      selectedInstitution: null,
+      fundQuery: '',
+      fundSuggestions: [],
+      queryResult: null,
+      resultVisible: false,
+      matchedFund: null,
+
+      // Manage
+      expandedInst: null,
+      productSearchText: '',
+      showAddInstModal: false,
+      newInstName: '',
+      newProductCode: '',
+      newProductName: '',
+      deleteTarget: null,
+
+      // Import
+      importInstSearch: '',
+      showImportInstDropdown: false,
+      importTargetInst: null,
+      excelDragover: false,
+      isProcessing: false,
+      ocrProgress: 0,
+      ocrStatus: '',
+      previewProducts: [],
+
+      // Toast
+      toast: { message: '', visible: false, timer: null }
+    };
+  },
+
+  computed: {
+    filteredInstitutions() {
+      if (!this.instSearchText.trim()) return this.institutions;
+      return this.institutions.filter(inst =>
+        fuzzyMatch(this.instSearchText, inst.name).match
+      ).sort((a, b) =>
+        fuzzyMatch(this.instSearchText, b.name).score - fuzzyMatch(this.instSearchText, a.name).score
+      );
+    },
+    importFilteredInsts() {
+      if (!this.importInstSearch.trim()) return this.institutions;
+      return this.institutions.filter(inst =>
+        fuzzyMatch(this.importInstSearch, inst.name).match
+      );
+    },
+    selectedPreviewCount() {
+      return this.previewProducts.filter(p => p.selected).length;
+    }
+  },
+
+  methods: {
+    // Persistence
+    async loadData() {
+      this.institutions = await DB.load();
+    },
+    async saveInst(inst) {
+      await DB.upsert(inst);
+    },
+
+    // Toast
+    showToast(msg) {
+      if (this.toast.timer) clearTimeout(this.toast.timer);
+      this.toast.message = msg;
+      this.toast.visible = true;
+      this.toast.timer = setTimeout(() => { this.toast.visible = false; }, 2000);
+    },
+
+    // View switching
+    switchView(view) {
+      this.currentView = view;
+      // Reset states
+      this.queryResult = null;
+      this.resultVisible = false;
+      this.previewProducts = [];
+    },
+
+    // === Query View ===
+    selectInstitution(inst) {
+      this.selectedInstitution = inst;
+      this.instSearchText = inst.name;
+      this.showInstDropdown = false;
+      this.fundQuery = '';
+      this.queryResult = null;
+      this.resultVisible = false;
+      this.fundSuggestions = [];
+      nextTick(() => {
+        if (this.$refs.fundInput) this.$refs.fundInput.focus();
+      });
+    },
+
+    onFundQueryInput() {
+      this.queryResult = null;
+      this.resultVisible = false;
+      this.matchedFund = null;
+      if (!this.fundQuery.trim() || !this.selectedInstitution) {
+        this.fundSuggestions = [];
+        return;
+      }
+      const q = this.fundQuery.trim();
+      const results = [];
+      for (const p of this.selectedInstitution.products) {
+        const nameMatch = fuzzyMatch(q, p.name);
+        const codeMatch = fuzzyMatch(q, p.code);
+        const bestScore = Math.max(nameMatch.score, codeMatch.score);
+        if (nameMatch.match || codeMatch.match) {
+          results.push({ ...p, score: bestScore });
+        }
+      }
+      results.sort((a, b) => b.score - a.score);
+      this.fundSuggestions = results.slice(0, 8);
+    },
+
+    selectFund(fund) {
+      this.fundQuery = fund.code + ' ' + fund.name;
+      this.fundSuggestions = [];
+      this.matchedFund = fund;
+      this.queryResult = 'investable';
+      nextTick(() => { this.resultVisible = true; });
+    },
+
+    // Check if typed query exactly matches - triggered on Enter or when suggestion is empty
+    checkFund() {
+      if (!this.selectedInstitution || !this.fundQuery.trim()) return;
+      const q = this.fundQuery.trim();
+      const found = this.selectedInstitution.products.find(p =>
+        p.code === q || p.name === q || p.name.includes(q) || p.code.startsWith(q)
+      );
+      if (found) {
+        this.matchedFund = found;
+        this.queryResult = 'investable';
+      } else {
+        this.matchedFund = null;
+        this.queryResult = 'not-investable';
+      }
+      this.fundSuggestions = [];
+      nextTick(() => { this.resultVisible = true; });
+    },
+
+    // === Manage View ===
+    toggleExpand(id) {
+      this.expandedInst = this.expandedInst === id ? null : id;
+      this.productSearchText = '';
+    },
+
+    filteredProducts(inst) {
+      if (!this.productSearchText.trim()) return inst.products;
+      return inst.products.filter(p =>
+        fuzzyMatch(this.productSearchText, p.name).match ||
+        fuzzyMatch(this.productSearchText, p.code).match
+      );
+    },
+
+    async addInstitution() {
+      const name = this.newInstName.trim();
+      if (!name) { this.showToast('请输入机构名称'); return; }
+      if (this.institutions.some(i => i.name === name)) {
+        this.showToast('该机构已存在');
+        return;
+      }
+      const now = new Date().toISOString();
+      const inst = { id: 'inst_' + Date.now(), name, products: [], createdAt: now, updatedAt: now };
+      if (await DB.upsert(inst)) {
+        this.institutions.push(inst);
+        this.newInstName = '';
+        this.showAddInstModal = false;
+        this.showToast('机构添加成功');
+      } else {
+        this.showToast('添加失败，请检查网络');
+      }
+    },
+
+    confirmDeleteInst(inst) {
+      this.deleteTarget = inst;
+    },
+    async deleteInstitution() {
+      if (await DB.remove(this.deleteTarget.id)) {
+        this.institutions = this.institutions.filter(i => i.id !== this.deleteTarget.id);
+        if (this.selectedInstitution && this.selectedInstitution.id === this.deleteTarget.id) {
+          this.selectedInstitution = null;
+          this.instSearchText = '';
+        }
+        this.deleteTarget = null;
+        this.showToast('已删除');
+      } else {
+        this.deleteTarget = null;
+        this.showToast('删除失败，请检查网络');
+      }
+    },
+
+    async addProduct(inst) {
+      const code = this.newProductCode.trim();
+      const name = this.newProductName.trim().replace(/\s+/g, '');
+      if (!code || !name) { this.showToast('请填写代码和名称'); return; }
+      if (inst.products.some(p => p.code === code)) {
+        this.showToast('该代码已存在');
+        return;
+      }
+      inst.products.push({ code, name });
+      inst.updatedAt = new Date().toISOString();
+      await this.saveInst(inst);
+      this.newProductCode = '';
+      this.newProductName = '';
+      this.showToast('产品已添加');
+    },
+
+    async removeProduct(inst, code) {
+      inst.products = inst.products.filter(p => p.code !== code);
+      inst.updatedAt = new Date().toISOString();
+      await this.saveInst(inst);
+    },
+
+    // === Import View ===
+    selectImportInst(inst) {
+      this.importTargetInst = inst;
+      this.importInstSearch = inst.name;
+      this.showImportInstDropdown = false;
+    },
+
+    async getOrCreateImportTarget() {
+      if (this.importTargetInst) return this.importTargetInst;
+      const name = this.importInstSearch.trim();
+      if (!name) { this.showToast('请先选择或输入机构名称'); return null; }
+      let inst = this.institutions.find(i => i.name === name);
+      if (!inst) {
+        const now = new Date().toISOString();
+        inst = { id: 'inst_' + Date.now(), name, products: [], createdAt: now, updatedAt: now };
+        if (await DB.upsert(inst)) {
+          this.institutions.push(inst);
+        } else {
+          this.showToast('创建机构失败，请检查网络'); return null;
+        }
+      }
+      this.importTargetInst = inst;
+      return inst;
+    },
+
+    // Excel
+    handleExcelUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      this.parseExcel(file);
+      event.target.value = '';
+    },
+    handleExcelDrop(event) {
+      this.excelDragover = false;
+      const file = event.dataTransfer.files[0];
+      if (file) this.parseExcel(file);
+    },
+    async parseExcel(file) {
+      try {
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data);
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+        let codeCol = -1, nameCol = -1, startRow = 0;
+        for (let r = 0; r < Math.min(rows.length, 10); r++) {
+          if (!rows[r]) continue;
+          const row = rows[r].map(c => String(c || ''));
+          for (let c = 0; c < row.length; c++) {
+            const cell = row[c];
+            if (cell.includes('代码') || cell.includes('编码') || cell.includes('基金代码')) codeCol = c;
+            if (cell.includes('名称') || cell.includes('基金名') || cell.includes('产品名')) nameCol = c;
+          }
+          if (codeCol >= 0 && nameCol >= 0) { startRow = r + 1; break; }
+        }
+        // Fallback
+        if (codeCol < 0) { codeCol = 0; nameCol = 1; startRow = 1; }
+        if (nameCol < 0) nameCol = codeCol === 0 ? 1 : 0;
+
+        const products = [];
+        for (let r = startRow; r < rows.length; r++) {
+          if (!rows[r]) continue;
+          const code = String(rows[r][codeCol] || '').trim().replace(/'/g, '');
+          const name = String(rows[r][nameCol] || '').trim().replace(/\s+/g, '');
+          if (code && name) {
+            products.push({ code, name, selected: true });
+          }
+        }
+
+        if (products.length === 0) {
+          this.showToast('未识别到有效产品数据');
+          return;
+        }
+        this.previewProducts = products;
+        this.showToast(`已识别 ${products.length} 条产品`);
+      } catch (e) {
+        this.showToast('Excel解析失败: ' + e.message);
+      }
+    },
+
+    // PDF
+    async handlePdfUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      event.target.value = '';
+
+      this.isProcessing = true;
+      this.ocrProgress = 0;
+      this.ocrStatus = '正在解析PDF...';
+
+      try {
+        const pdfjsLib = await window._pdfjsReady;
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const totalPages = pdf.numPages;
+        let fullText = '';
+
+        for (let i = 1; i <= totalPages; i++) {
+          this.ocrProgress = Math.round((i / totalPages) * 100);
+          this.ocrStatus = `解析第 ${i}/${totalPages} 页...`;
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          const pageText = content.items.map(item => item.str).join(' ');
+          fullText += pageText + '\n';
+        }
+
+        // Parse: find all occurrences of 6-digit code + .XX
+        const products = [];
+        const seen = new Set();
+        // Try line-by-line first
+        const lines = fullText.split('\n');
+        for (const line of lines) {
+          const regex = /(\d{6}[.\u3002]\w{2})/g;
+          let match;
+          while ((match = regex.exec(line)) !== null) {
+            const code = match[1].replace('\u3002', '.');
+            if (seen.has(code)) continue;
+            seen.add(code);
+            // Extract name near the code: look for Chinese characters around it
+            const parts = line.split(match[0]);
+            let name = '';
+            // Check text after code
+            const after = (parts[1] || '').replace(/[\s|｜,，、;；()（）]+/g, '').trim();
+            const before = (parts[0] || '').replace(/[\s|｜,，、;；()（）]+/g, '').trim();
+            // Prefer the part that contains Chinese characters
+            const chineseAfter = after.match(/[\u4e00-\u9fa5A-Za-z][\u4e00-\u9fa5A-Za-z0-9]+/);
+            const chineseBefore = before.match(/[\u4e00-\u9fa5A-Za-z][\u4e00-\u9fa5A-Za-z0-9]*$/);
+            if (chineseAfter) {
+              name = chineseAfter[0];
+            } else if (chineseBefore) {
+              name = chineseBefore[0];
+            }
+            products.push({ code, name: name.replace(/\s+/g, '') || '未识别名称', selected: true });
+          }
+        }
+
+        this.isProcessing = false;
+        this.ocrStatus = '';
+        if (products.length > 0) {
+          this.previewProducts = products;
+          this.showToast(`已从PDF中识别 ${products.length} 条产品`);
+        } else {
+          this.showToast('未在PDF中识别到有效的基金代码（如005787.OF）');
+        }
+      } catch (e) {
+        this.isProcessing = false;
+        this.ocrStatus = '';
+        this.showToast('PDF解析失败: ' + e.message);
+      }
+    },
+
+    // OCR
+    async handleImageOCR(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      event.target.value = '';
+
+      this.isProcessing = true;
+      this.ocrProgress = 0;
+      this.ocrStatus = '正在初始化OCR引擎...';
+
+      try {
+        const worker = await Tesseract.createWorker('chi_sim', 1, {
+          logger: (m) => {
+            if (m.status === 'recognizing text') {
+              this.ocrProgress = Math.round(m.progress * 100);
+              this.ocrStatus = `识别中... ${this.ocrProgress}%`;
+            } else if (m.status === 'loading language traineddata') {
+              this.ocrStatus = '正在下载中文语言包...';
+              this.ocrProgress = Math.round(m.progress * 100);
+            }
+          }
+        });
+
+        const { data: { text } } = await worker.recognize(file);
+        await worker.terminate();
+
+        const lines = text.split('\n').filter(l => l.trim());
+        const products = [];
+        for (const line of lines) {
+          const codeMatch = line.match(/(\d{6}[.\u3002]\w{2})/);
+          if (codeMatch) {
+            const code = codeMatch[1].replace('\u3002', '.');
+            const name = line.replace(codeMatch[0], '').replace(/[\s|｜,，、;；]+/g, '').trim();
+            products.push({ code, name: name || '未识别名称', selected: true });
+          }
+        }
+
+        this.previewProducts = products;
+        this.isProcessing = false;
+        if (products.length > 0) {
+          this.ocrStatus = '';
+          this.showToast(`识别完成，共 ${products.length} 条记录`);
+        } else {
+          this.ocrStatus = '';
+          this.showToast('未识别到有效的基金代码（如005787.OF）');
+        }
+      } catch (e) {
+        this.isProcessing = false;
+        this.ocrStatus = '';
+        this.showToast('OCR识别失败: ' + e.message);
+      }
+    },
+
+    isValidCode(code) {
+      return /^\d{6}\.\w{2}$/.test(code);
+    },
+
+    async confirmImport() {
+      const target = await this.getOrCreateImportTarget();
+      if (!target) return;
+
+      const selected = this.previewProducts.filter(p => p.selected && p.code && p.name);
+      const existingCodes = new Set(target.products.map(p => p.code));
+      let added = 0, skipped = 0;
+
+      for (const p of selected) {
+        if (existingCodes.has(p.code)) {
+          skipped++;
+        } else {
+          target.products.push({ code: p.code.trim(), name: p.name.trim().replace(/\s+/g, '') });
+          existingCodes.add(p.code);
+          added++;
+        }
+      }
+
+      target.updatedAt = new Date().toISOString();
+      await this.saveInst(target);
+      this.previewProducts = [];
+      this.showToast(`导入完成：新增 ${added} 条${skipped > 0 ? '，跳过 ' + skipped + ' 条重复' : ''}`);
+    },
+
+    // Data Export/Import
+    exportData() {
+      const data = JSON.stringify(this.institutions, null, 2);
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `机构产品池备份_${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      this.showToast('备份已下载');
+    },
+    importBackup(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const data = JSON.parse(e.target.result);
+          if (!Array.isArray(data)) throw new Error('格式错误');
+          for (const inst of data) {
+            await DB.upsert(inst);
+          }
+          this.institutions = await DB.load();
+          this.showToast(`已导入 ${data.length} 个机构`);
+        } catch (err) {
+          this.showToast('备份文件格式错误');
+        }
+      };
+      reader.readAsText(file);
+      event.target.value = '';
+    }
+  },
+
+  watch: {
+    showAddInstModal(v) {
+      if (v) nextTick(() => { if (this.$refs.newInstInput) this.$refs.newInstInput.focus(); });
+    }
+  },
+
+  async mounted() {
+    await this.loadData();
+    // Close dropdowns on outside click
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.dropdown')) {
+        this.showInstDropdown = false;
+        this.showImportInstDropdown = false;
+      }
+    });
+    // Listen for Enter on fund query
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && this.currentView === 'query' && this.fundQuery) {
+        if (this.fundSuggestions.length > 0) {
+          this.selectFund(this.fundSuggestions[0]);
+        } else {
+          this.checkFund();
+        }
+      }
+    });
+  }
+}).mount('#app');
+</script>
+</body>
+</html>
