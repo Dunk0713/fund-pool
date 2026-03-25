@@ -503,6 +503,11 @@
     .preview-table .warn {
       background: #fef3c7;
     }
+    .verify-cell { text-align: center; font-size: 14px; }
+    .verify-ok   { color: var(--success); }
+    .verify-warn { color: #f59e0b; }
+    .verify-spin { color: var(--text-tertiary); display: inline-block; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .preview-actions {
       display: flex;
       gap: 8px;
@@ -911,13 +916,18 @@
       <div class="card" style="padding:12px;overflow-x:auto;">
         <table class="preview-table">
           <thead>
-            <tr><th style="width:30px;"></th><th style="width:80px;">代码</th><th>名称</th></tr>
+            <tr><th style="width:30px;"></th><th style="width:80px;">代码</th><th>名称</th><th style="width:28px;"></th></tr>
           </thead>
           <tbody>
             <tr v-for="(p, i) in previewProducts" :key="i" :class="{warn: !isValidCode(p.code)}">
               <td><input type="checkbox" v-model="p.selected"></td>
               <td><input v-model="p.code" :class="{warn: !isValidCode(p.code)}"></td>
               <td><input v-model="p.name"></td>
+              <td class="verify-cell">
+                <span v-if="p.verifying" class="verify-spin" title="正在通过iFind核验...">⟳</span>
+                <span v-else-if="p.verified === true" class="verify-ok" title="已通过iFind核验">✓</span>
+                <span v-else-if="p.verified === false" class="verify-warn" title="iFind未找到该基金">?</span>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -1418,7 +1428,7 @@ createApp({
           if (codeMatch) {
             const code = codeMatch[1].replace('\u3002', '.');
             const name = line.replace(codeMatch[0], '').replace(/[\s]+/g, '').trim();
-            products.push({ code, name: name || '未识别名称', selected: true });
+            products.push({ code, name: name || '未识别名称', selected: true, verifying: false, verified: null });
           }
         }
 
@@ -1427,6 +1437,7 @@ createApp({
         if (products.length > 0) {
           this.ocrStatus = '';
           this.showToast(`识别完成，共 ${products.length} 条记录`);
+          this.validateWithIfind(products);
         } else {
           this.ocrStatus = '';
           this.showToast('未识别到有效的基金代码（如005787.OF）');
@@ -1440,6 +1451,57 @@ createApp({
 
     isValidCode(code) {
       return /^\d{6}\.\w{2}$/.test(code);
+    },
+
+    async validateWithIfind(products) {
+      for (const p of products) {
+        if (!this.isValidCode(p.code)) continue;
+        p.verifying = true;
+        try {
+          const res = await fetch('/api/ifind', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'tools/call',
+              params: {
+                name: 'get_fund_profile',
+                arguments: { query: `${p.code}的基金简称` }
+              },
+              id: 1
+            })
+          });
+          const json = await res.json();
+          const textContent = json?.result?.content?.[0]?.text;
+          if (textContent) {
+            const inner = JSON.parse(textContent);
+            const name = this.extractIfindName(inner?.data?.answer1);
+            if (name) {
+              p.name = name;
+              p.verified = true;
+            } else {
+              p.verified = false;
+            }
+          } else {
+            p.verified = false;
+          }
+        } catch (_) {
+          p.verified = false;
+        } finally {
+          p.verifying = false;
+        }
+      }
+    },
+
+    extractIfindName(markdown) {
+      if (!markdown) return null;
+      // Parse markdown table rows, skip header and separator lines
+      const rows = markdown.split('\n').filter(l => l.trim().startsWith('|') && !/^[\s|:-]+$/.test(l));
+      // rows[0] = header, rows[1] = first data row
+      if (rows.length < 2) return null;
+      const cols = rows[1].split('|').map(s => s.trim()).filter(Boolean);
+      // table columns: 证券代码 | 证券简称 | 基金代码 | 基金主代码
+      return cols[1] || null;
     },
 
     async confirmImport() {
