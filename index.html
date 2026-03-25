@@ -778,7 +778,7 @@
           </tbody>
         </table>
         <div class="add-product-row">
-          <input v-model="newProductCode" placeholder="如005787.OF" style="max-width:120px;">
+          <input v-model="newProductCode" placeholder="如005787.OF或005787" style="max-width:120px;">
           <input v-model="newProductName" placeholder="名称">
           <button class="btn btn-primary btn-sm" @click="addProduct(inst)">添加</button>
         </div>
@@ -1149,9 +1149,10 @@ createApp({
     // Check if typed query exactly matches - triggered on Enter or when suggestion is empty
     checkFund() {
       if (!this.selectedInstitution || !this.fundQuery.trim()) return;
-      const q = normalizeCode(this.fundQuery.trim());
+      const q = this.fundQuery.trim();
+      const qNorm = this.normalizeCode(q);
       const found = this.selectedInstitution.products.find(p =>
-        p.code === q || normalizeCode(p.code) === q || p.name === q || p.name.includes(q) || p.code.startsWith(q)
+        p.code === q || p.code === qNorm || p.name === q || p.name.includes(q) || p.code.startsWith(q)
       );
       if (found) {
         this.matchedFund = found;
@@ -1216,7 +1217,7 @@ createApp({
     },
 
     async addProduct(inst) {
-      const code = this.newProductCode.trim();
+      const code = this.normalizeCode(this.newProductCode.trim());
       const name = this.newProductName.trim().replace(/\s+/g, '');
       if (!code || !name) { this.showToast('请填写代码和名称'); return; }
       if (inst.products.some(p => p.code === code)) {
@@ -1299,9 +1300,10 @@ createApp({
         const products = [];
         for (let r = startRow; r < rows.length; r++) {
           if (!rows[r]) continue;
-          const code = normalizeCode(String(rows[r][codeCol] || '').trim().replace(/'/g, ''));
+          let code = String(rows[r][codeCol] || '').trim().replace(/'/g, '');
           const name = String(rows[r][nameCol] || '').trim().replace(/\s+/g, '');
           if (code && name) {
+            code = this.normalizeCode(code);
             products.push({ code, name, selected: true });
           }
         }
@@ -1348,11 +1350,12 @@ createApp({
         const seen = new Set();
         // Try line-by-line first
         const lines = fullText.split('\n');
-        for (const line of lines) {
-          const regex = /(\d{6}(?:[.\u3002]\w{2})?)/g;
+        for (let line of lines) {
+          line = this.cleanOcrText(line);
+          const regex = /(\d{6}\s*[.\u3002·]\s*\w{2}|\d{6}\s*(?:OF|of|oF|Of)|\d{3,6}(?=[\s\u4e00-\u9fa5|｜,，;；）)\]\}]|$))/g;
           let match;
           while ((match = regex.exec(line)) !== null) {
-            const code = normalizeCode(match[1].replace('\u3002', '.'));
+            const code = this.normalizeCode(match[1]);
             if (seen.has(code)) continue;
             seen.add(code);
             // Extract name near the code: look for Chinese characters around it
@@ -1379,7 +1382,7 @@ createApp({
           this.previewProducts = products;
           this.showToast(`已从PDF中识别 ${products.length} 条产品`);
         } else {
-          this.showToast('未在PDF中识别到有效的基金代码（如005787.OF）');
+          this.showToast('未在PDF中识别到有效的基金代码（如005787.OF或005787）');
         }
       } catch (e) {
         this.isProcessing = false;
@@ -1416,11 +1419,16 @@ createApp({
 
         const lines = text.split('\n').filter(l => l.trim());
         const products = [];
-        for (const line of lines) {
-          const codeMatch = line.match(/(\d{6}(?:[.\u3002]\w{2})?)/);
+        for (let line of lines) {
+          line = this.cleanOcrText(line);
+          const codeMatch = line.match(/(\d{6}\s*[.\u3002·]\s*\w{2}|\d{6}\s*(?:OF|of|oF|Of)|\d{3,6}(?=[\s\u4e00-\u9fa5|｜,，;；）)\]\}]|$))/);
           if (codeMatch) {
-            const code = normalizeCode(codeMatch[1].replace('\u3002', '.'));
-            const name = line.replace(codeMatch[0], '').replace(/[\s|｜,，、;；]+/g, '').trim();
+            const code = this.normalizeCode(codeMatch[1]);
+            const rawName = line.replace(codeMatch[0], '')
+              .replace(/[\s|｜,，、;；。.''""·…—–\-（）【】「」《》〈〉•▪►◆★☆→←■□△▲'"`\u3002\u00b7\u2022\u30fb]+/g, '')
+              .trim();
+            // Only keep name if it contains meaningful characters (Chinese or letters)
+            const name = /[\u4e00-\u9fa5a-zA-Z]/.test(rawName) ? rawName : '';
             products.push({ code, name: name || '未识别名称', selected: true });
           }
         }
@@ -1432,7 +1440,7 @@ createApp({
           this.showToast(`识别完成，共 ${products.length} 条记录`);
         } else {
           this.ocrStatus = '';
-          this.showToast('未识别到有效的基金代码（如005787.OF）');
+          this.showToast('未识别到有效的基金代码（如005787.OF或005787）');
         }
       } catch (e) {
         this.isProcessing = false;
@@ -1441,8 +1449,48 @@ createApp({
       }
     },
 
+    cleanOcrText(text) {
+      // Strip OCR noise: all quote variants (smart quotes, ASCII apostrophe, backtick)
+      text = text.replace(/[''""'"`]/g, '');
+      // Strip common OCR noise symbols at start/end of line (。· bullets etc.)
+      text = text.replace(/^[\s\u3000\u3002\u00b7\u2022\u2018\u2019\u201c\u201d\uff0e\uff01\uff1f\u30fb\u300c\u300d\u300e\u300f]+/, '');
+      text = text.replace(/[\s\u3000\u3002\u00b7\u2022\u2018\u2019\u201c\u201d\uff0e\uff01\uff1f\u30fb\u300c\u300d\u300e\u300f]+$/, '');
+      // Remove spaces/fullwidth spaces between digits
+      text = text.replace(/(\d)[\s\u3000]+(\d)/g, '$1$2');
+      // Fix O/o misread as digit between digits (apply twice for consecutive)
+      text = text.replace(/(\d)[Oo](\d)/g, '$10$2');
+      text = text.replace(/(\d)[Oo](\d)/g, '$10$2');
+      // Fix leading O before digits (e.g., O05787 → 005787)
+      text = text.replace(/\bO(\d{5})/g, '0$1');
+      // Remove spaces between digits and OF suffix (e.g., 005787 .OF → 005787.OF, 005787 OF → 005787OF)
+      text = text.replace(/(\d{6})\s*[.\u3002·,，]\s*(OF|of|oF|Of)/g, '$1.$2');
+      text = text.replace(/(\d{6})\s+(OF|of|oF|Of)\b/g, '$1.$2');
+      return text;
+    },
+
+    normalizeCode(code) {
+      code = code.trim();
+      // Replace fullwidth period and other separators
+      code = code.replace(/[\u3002·,，]/g, '.');
+      // Remove spaces around the dot
+      code = code.replace(/\s*\.\s*/g, '.');
+      // Handle codes like 005787OF or 005787of (no separator)
+      const noSepMatch = code.match(/^(\d{6})\s*(OF|of|oF|Of)$/);
+      if (noSepMatch) return noSepMatch[1] + '.OF';
+      // Handle bare 6-digit codes → append .OF
+      if (/^\d{6}$/.test(code)) return code + '.OF';
+      // Handle codes with fewer than 6 digits (leading zeros lost, e.g., from Excel) → pad and append .OF
+      if (/^\d{1,5}$/.test(code)) return code.padStart(6, '0') + '.OF';
+      // Handle short codes with suffix (e.g., 5787.OF → 005787.OF)
+      const shortWithSuffix = code.match(/^(\d{1,5})\.(\w{2})$/);
+      if (shortWithSuffix) return shortWithSuffix[1].padStart(6, '0') + '.' + shortWithSuffix[2].toUpperCase();
+      // Handle standard 6-digit.XX format
+      if (/^\d{6}\.\w{2}$/.test(code)) return code.toUpperCase();
+      return code;
+    },
+
     isValidCode(code) {
-      return /^\d{6}(\.\w{2})?$/.test(code);
+      return /^\d{1,6}(\.\w{2})?$/.test(code);
     },
 
     async confirmImport() {
