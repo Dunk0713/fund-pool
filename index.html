@@ -783,7 +783,7 @@
           </tbody>
         </table>
         <div class="add-product-row">
-          <input v-model="newProductCode" placeholder="如005787.OF" style="max-width:120px;">
+          <input v-model="newProductCode" placeholder="如005787.OF或005787" style="max-width:120px;">
           <input v-model="newProductName" placeholder="名称">
           <button class="btn btn-primary btn-sm" @click="addProduct(inst)">添加</button>
         </div>
@@ -1155,8 +1155,9 @@ createApp({
     checkFund() {
       if (!this.selectedInstitution || !this.fundQuery.trim()) return;
       const q = this.fundQuery.trim();
+      const qNorm = this.normalizeCode(q);
       const found = this.selectedInstitution.products.find(p =>
-        p.code === q || p.name === q || p.name.includes(q) || p.code.startsWith(q)
+        p.code === q || p.code === qNorm || p.name === q || p.name.includes(q) || p.code.startsWith(q)
       );
       if (found) {
         this.matchedFund = found;
@@ -1221,7 +1222,7 @@ createApp({
     },
 
     async addProduct(inst) {
-      const code = this.newProductCode.trim();
+      const code = this.normalizeCode(this.newProductCode);
       const name = this.newProductName.trim().replace(/\s+/g, '');
       if (!code || !name) { this.showToast('请填写代码和名称'); return; }
       if (inst.products.some(p => p.code === code)) {
@@ -1304,7 +1305,7 @@ createApp({
         const products = [];
         for (let r = startRow; r < rows.length; r++) {
           if (!rows[r]) continue;
-          const code = String(rows[r][codeCol] || '').trim().replace(/'/g, '');
+          const code = this.normalizeCode(String(rows[r][codeCol] || '').trim().replace(/'/g, ''));
           const name = String(rows[r][nameCol] || '').trim().replace(/\s+/g, '');
           if (code && name) {
             products.push({ code, name, selected: true });
@@ -1414,39 +1415,57 @@ createApp({
     },
 
     // Shared parser used by both image-OCR and PDF paths.
+    // Fix common OCR errors before code detection:
+    // collapse spaces between digits, fix O/o inside digit runs, rejoin split suffixes.
+    cleanOcrText(text) {
+      text = text.replace(/(\d)[\s\u3000]+(\d)/g, '$1$2');          // spaces inside digit runs
+      text = text.replace(/(\d)[Oo](\d)/g, '$10$2');                // O between digits → 0
+      text = text.replace(/(\d)[Oo](\d)/g, '$10$2');                // apply twice (consecutive)
+      text = text.replace(/\bO(\d{5})/g, '0$1');                   // leading O before 5 digits
+      text = text.replace(/(\d{6})\s*[.\u3002·,，]\s*(OF|of)\b/gi, '$1.$2');  // 005787 .OF → 005787.OF
+      text = text.replace(/(\d{6})\s+(OF|of)\b/gi, '$1.$2');       // 005787 OF  → 005787.OF
+      return text;
+    },
+
+    // Normalize a raw code string to DDDDDD.XX uppercase format.
+    // Handles: bare 6-digit, short (leading-zero loss from Excel), mixed letter/digit OCR errors.
+    normalizeCode(raw) {
+      raw = raw.trim().replace(/[\u3002·]/g, '.').replace(/\s*\.\s*/g, '.');
+      // No dot: bare 6-digit → append .OF; short → pad then .OF; 6-digit+OF without dot
+      const noSep = raw.match(/^(\d{6})(OF|of)?$/i);
+      if (noSep) return noSep[1] + '.OF';
+      if (/^\d{1,5}$/.test(raw)) return raw.padStart(6, '0') + '.OF';
+      const shortSuffix = raw.match(/^(\d{1,5})\.(\w{2})$/);
+      if (shortSuffix) return shortSuffix[1].padStart(6, '0') + '.' + shortSuffix[2].toUpperCase();
+      // Standard DDDDDD.XX: fix numeric-part letter confusions, uppercase suffix
+      const dot = raw.indexOf('.');
+      if (dot >= 0) {
+        const num    = raw.slice(0, dot).replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+        const suffix = raw.slice(dot + 1).toUpperCase().replace(/0/g, 'O').replace(/1/g, 'I');
+        return `${num}.${suffix}`;
+      }
+      return raw.toUpperCase();
+    },
+
     parseFundLines(text) {
-      // 1. Whitelist: allow only CJK chars, ASCII letters/digits, period (for codes), parens.
-      //    Everything else (curly quotes, dashes, tildes, OCR garbage) is stripped.
+      // Whitelist: keep only CJK chars, ASCII letters/digits, period (for codes), parens.
       const cleanLine = s => s.replace(
         /[^\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaffa-zA-Z0-9.()\uff08\uff09\s]/g, ''
       );
-
-      // 2. Name cleaner: same whitelist but WITHOUT period — periods only belong in codes.
+      // Name: same whitelist but without period (periods only belong in codes).
       const cleanName = s => s
         .replace(/\./g, '')
         .replace(/[^\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaffa-zA-Z0-9()\uff08\uff09]/g, '')
         .trim();
 
-      // 3. Normalize OCR code errors:
-      //    Numeric part (left of dot): O/o→0, I/l→1
-      //    Suffix part (right of dot): 0→O, 1→I  (fund suffixes are letters, never digits)
-      const normalizeCode = raw => {
-        const dot = raw.indexOf('.');
-        if (dot < 0) return raw.toUpperCase();
-        const num    = raw.slice(0, dot).replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
-        const suffix = raw.slice(dot + 1).toUpperCase().replace(/0/g, 'O').replace(/1/g, 'I');
-        return `${num}.${suffix}`;
-      };
-
       const products = [];
       const seen = new Set();
       for (const raw of text.split('\n')) {
-        const line = cleanLine(raw);
+        const line = cleanLine(this.cleanOcrText(raw));
         if (!line.trim()) continue;
-        // Match 6 digits + separator + 2 alphanumeric chars
         const m = line.match(/(\d{6}[.\u3002][A-Za-z0-9]{2})/);
         if (!m) continue;
-        const code = normalizeCode(m[1].replace('\u3002', '.'));
+        const code = this.normalizeCode(m[1].replace('\u3002', '.'));
         if (!this.isValidCode(code) || seen.has(code)) continue;
         seen.add(code);
         const name = cleanName(line.replace(m[0], '')) || '未识别名称';
