@@ -990,6 +990,11 @@ const DB = {
   }
 };
 
+// Normalize fund code: append .OF if bare 6-digit code
+function normalizeCode(code) {
+  return /^\d{6}$/.test(code) ? code + '.OF' : code;
+}
+
 function fuzzyMatch(query, target) {
   if (!query) return { match: true, score: 0 };
   query = query.toLowerCase().trim();
@@ -1119,10 +1124,10 @@ createApp({
         this.fundSuggestions = [];
         return;
       }
-      const q = this.fundQuery.trim();
+      const q = normalizeCode(this.fundQuery.trim());
       const results = [];
       for (const p of this.selectedInstitution.products) {
-        const nameMatch = fuzzyMatch(q, p.name);
+        const nameMatch = fuzzyMatch(this.fundQuery.trim(), p.name);
         const codeMatch = fuzzyMatch(q, p.code);
         const bestScore = Math.max(nameMatch.score, codeMatch.score);
         if (nameMatch.match || codeMatch.match) {
@@ -1144,9 +1149,9 @@ createApp({
     // Check if typed query exactly matches - triggered on Enter or when suggestion is empty
     checkFund() {
       if (!this.selectedInstitution || !this.fundQuery.trim()) return;
-      const q = this.fundQuery.trim();
+      const q = normalizeCode(this.fundQuery.trim());
       const found = this.selectedInstitution.products.find(p =>
-        p.code === q || p.name === q || p.name.includes(q) || p.code.startsWith(q)
+        p.code === q || normalizeCode(p.code) === q || p.name === q || p.name.includes(q) || p.code.startsWith(q)
       );
       if (found) {
         this.matchedFund = found;
@@ -1294,7 +1299,7 @@ createApp({
         const products = [];
         for (let r = startRow; r < rows.length; r++) {
           if (!rows[r]) continue;
-          const code = String(rows[r][codeCol] || '').trim().replace(/'/g, '');
+          const code = normalizeCode(String(rows[r][codeCol] || '').trim().replace(/'/g, ''));
           const name = String(rows[r][nameCol] || '').trim().replace(/\s+/g, '');
           if (code && name) {
             products.push({ code, name, selected: true });
@@ -1344,10 +1349,10 @@ createApp({
         // Try line-by-line first
         const lines = fullText.split('\n');
         for (const line of lines) {
-          const regex = /(\d{6}[.\u3002]\w{2})/g;
+          const regex = /(\d{6}(?:[.\u3002]\w{2})?)/g;
           let match;
           while ((match = regex.exec(line)) !== null) {
-            const code = match[1].replace('\u3002', '.');
+            const code = normalizeCode(match[1].replace('\u3002', '.'));
             if (seen.has(code)) continue;
             seen.add(code);
             // Extract name near the code: look for Chinese characters around it
@@ -1412,9 +1417,9 @@ createApp({
         const lines = text.split('\n').filter(l => l.trim());
         const products = [];
         for (const line of lines) {
-          const codeMatch = line.match(/(\d{6}[.\u3002]\w{2})/);
+          const codeMatch = line.match(/(\d{6}(?:[.\u3002]\w{2})?)/);
           if (codeMatch) {
-            const code = codeMatch[1].replace('\u3002', '.');
+            const code = normalizeCode(codeMatch[1].replace('\u3002', '.'));
             const name = line.replace(codeMatch[0], '').replace(/[\s|｜,，、;；]+/g, '').trim();
             products.push({ code, name: name || '未识别名称', selected: true });
           }
@@ -1437,7 +1442,7 @@ createApp({
     },
 
     isValidCode(code) {
-      return /^\d{6}\.\w{2}$/.test(code);
+      return /^\d{6}(\.\w{2})?$/.test(code);
     },
 
     async confirmImport() {
