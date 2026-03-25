@@ -1348,41 +1348,13 @@ createApp({
           fullText += pageText + '\n';
         }
 
-        // Parse: find all occurrences of 6-digit code + .XX
-        const products = [];
-        const seen = new Set();
-        // Try line-by-line first
-        const lines = fullText.split('\n');
-        for (const line of lines) {
-          const regex = /(\d{6}[.\u3002]\w{2})/g;
-          let match;
-          while ((match = regex.exec(line)) !== null) {
-            const code = match[1].replace('\u3002', '.');
-            if (seen.has(code)) continue;
-            seen.add(code);
-            // Extract name near the code: look for Chinese characters around it
-            const parts = line.split(match[0]);
-            let name = '';
-            // Check text after code
-            const after = (parts[1] || '').replace(/[\s|｜,，、;；()（）]+/g, '').trim();
-            const before = (parts[0] || '').replace(/[\s|｜,，、;；()（）]+/g, '').trim();
-            // Prefer the part that contains Chinese characters
-            const chineseAfter = after.match(/[\u4e00-\u9fa5A-Za-z][\u4e00-\u9fa5A-Za-z0-9]+/);
-            const chineseBefore = before.match(/[\u4e00-\u9fa5A-Za-z][\u4e00-\u9fa5A-Za-z0-9]*$/);
-            if (chineseAfter) {
-              name = chineseAfter[0];
-            } else if (chineseBefore) {
-              name = chineseBefore[0];
-            }
-            products.push({ code, name: name.replace(/\s+/g, '') || '未识别名称', selected: true });
-          }
-        }
-
+        const products = this.parseFundLines(fullText);
         this.isProcessing = false;
         this.ocrStatus = '';
         if (products.length > 0) {
           this.previewProducts = products;
           this.showToast(`已从PDF中识别 ${products.length} 条产品`);
+          this.validateWithIfind(products);
         } else {
           this.showToast('未在PDF中识别到有效的基金代码（如005787.OF）');
         }
@@ -1419,19 +1391,7 @@ createApp({
         const { data: { text } } = await worker.recognize(file);
         await worker.terminate();
 
-        // 白名单清洗：只保留中文字符、字母数字、小数点、括号，去除一切OCR噪声
-        const cleanOcr = s => s.replace(/[^\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaffa-zA-Z0-9.()\uff08\uff09\s]/g, '');
-        const lines = text.split('\n').map(cleanOcr).filter(l => l.trim());
-        const products = [];
-        for (const line of lines) {
-          const codeMatch = line.match(/(\d{6}[.\u3002]\w{2})/);
-          if (codeMatch) {
-            const code = codeMatch[1].replace('\u3002', '.');
-            const name = line.replace(codeMatch[0], '').replace(/[\s]+/g, '').trim();
-            products.push({ code, name: name || '未识别名称', selected: true, verifying: false, verified: null });
-          }
-        }
-
+        const products = this.parseFundLines(text);
         this.previewProducts = products;
         this.isProcessing = false;
         if (products.length > 0) {
@@ -1450,7 +1410,49 @@ createApp({
     },
 
     isValidCode(code) {
-      return /^\d{6}\.\w{2}$/.test(code);
+      return /^\d{6}\.[A-Z]{2}$/.test(code);
+    },
+
+    // Shared parser used by both image-OCR and PDF paths.
+    parseFundLines(text) {
+      // 1. Whitelist: allow only CJK chars, ASCII letters/digits, period (for codes), parens.
+      //    Everything else (curly quotes, dashes, tildes, OCR garbage) is stripped.
+      const cleanLine = s => s.replace(
+        /[^\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaffa-zA-Z0-9.()\uff08\uff09\s]/g, ''
+      );
+
+      // 2. Name cleaner: same whitelist but WITHOUT period — periods only belong in codes.
+      const cleanName = s => s
+        .replace(/\./g, '')
+        .replace(/[^\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaffa-zA-Z0-9()\uff08\uff09]/g, '')
+        .trim();
+
+      // 3. Normalize OCR code errors:
+      //    Numeric part (left of dot): O/o→0, I/l→1
+      //    Suffix part (right of dot): 0→O, 1→I  (fund suffixes are letters, never digits)
+      const normalizeCode = raw => {
+        const dot = raw.indexOf('.');
+        if (dot < 0) return raw.toUpperCase();
+        const num    = raw.slice(0, dot).replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+        const suffix = raw.slice(dot + 1).toUpperCase().replace(/0/g, 'O').replace(/1/g, 'I');
+        return `${num}.${suffix}`;
+      };
+
+      const products = [];
+      const seen = new Set();
+      for (const raw of text.split('\n')) {
+        const line = cleanLine(raw);
+        if (!line.trim()) continue;
+        // Match 6 digits + separator + 2 alphanumeric chars
+        const m = line.match(/(\d{6}[.\u3002][A-Za-z0-9]{2})/);
+        if (!m) continue;
+        const code = normalizeCode(m[1].replace('\u3002', '.'));
+        if (!this.isValidCode(code) || seen.has(code)) continue;
+        seen.add(code);
+        const name = cleanName(line.replace(m[0], '')) || '未识别名称';
+        products.push({ code, name, selected: true, verifying: false, verified: null });
+      }
+      return products;
     },
 
     async validateWithIfind(products) {
