@@ -1415,7 +1415,7 @@ createApp({
           const codeMatch = line.match(/(\d{6}[.\u3002]\w{2})/);
           if (codeMatch) {
             const code = codeMatch[1].replace('\u3002', '.');
-            const name = line.replace(codeMatch[0], '').replace(/[\s|｜,，、;；]+/g, '').trim();
+            const name = line.replace(codeMatch[0], '').replace(/[\s|｜,，、;；''""·・。『』【】〖〗〔〕「」《》〈〉（）()[\]{}<>_\-—~～`^*+=@#$%&\\\/]+/g, '').trim();
             products.push({ code, name: name || '未识别名称', selected: true });
           }
         }
