@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "app",
+      "runtimeExecutable": "D:/Software/APP_Coding/python3.14.0/python",
+      "runtimeArgs": ["D:/Desktop/Claude测试/.claude/worktrees/laughing-mccarthy/server.py"],
+      "port": 3000
+    }
+  ]
+}

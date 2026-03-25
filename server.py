@@ -14,15 +14,23 @@ import urllib.request
 PORT = 3000
 SERVE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Read iFind token from .mcp.json (same directory as this script)
+# Read iFind token from .mcp.json — search SERVE_DIR then parent directories.
 def _load_token():
-    cfg = os.path.join(SERVE_DIR, '.mcp.json')
-    try:
-        with open(cfg, encoding='utf-8') as f:
-            d = json.load(f)
-        return d['mcpServers']['hexin-ifind-ds-fund-mcp']['headers']['Authorization']
-    except Exception:
-        return None
+    d = SERVE_DIR
+    for _ in range(6):
+        cfg = os.path.join(d, '.mcp.json')
+        if os.path.isfile(cfg):
+            try:
+                with open(cfg, encoding='utf-8') as f:
+                    data = json.load(f)
+                return data['mcpServers']['hexin-ifind-ds-fund-mcp']['headers']['Authorization']
+            except Exception:
+                break
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    return None
 
 IFIND_URL = 'https://api-mcp.51ifind.com:8643/ds-mcp-servers/hexin-ifind-ds-fund-mcp'
 IFIND_TOKEN = _load_token()

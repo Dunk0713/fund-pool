@@ -1308,7 +1308,7 @@ createApp({
           const code = this.normalizeCode(String(rows[r][codeCol] || '').trim().replace(/'/g, ''));
           const name = String(rows[r][nameCol] || '').trim().replace(/\s+/g, '');
           if (code && name) {
-            products.push({ code, name, selected: true });
+            products.push({ code, name, selected: true, verifying: false, verified: null });
           }
         }
 
@@ -1318,6 +1318,7 @@ createApp({
         }
         this.previewProducts = products;
         this.showToast(`已识别 ${products.length} 条产品`);
+        this.validateWithIfind(products);
       } catch (e) {
         this.showToast('Excel解析失败: ' + e.message);
       }
