@@ -1424,11 +1424,9 @@ createApp({
           const codeMatch = line.match(/(\d{6}\s*[.\u3002·]\s*\w{2}|\d{6}\s*(?:OF|of|oF|Of)|\d{3,6}(?=[\s\u4e00-\u9fa5|｜,，;；）)\]\}]|$))/);
           if (codeMatch) {
             const code = this.normalizeCode(codeMatch[1]);
-            const rawName = line.replace(codeMatch[0], '')
-              .replace(/[\s|｜,，、;；。.''""·…—–\-（）【】「」《》〈〉•▪►◆★☆→←■□△▲'"`\u3002\u00b7\u2022\u30fb]+/g, '')
-              .trim();
-            // Only keep name if it contains meaningful characters (Chinese or letters)
-            const name = /[\u4e00-\u9fa5a-zA-Z]/.test(rawName) ? rawName : '';
+            // Whitelist approach: keep only Chinese chars, letters, digits, hyphens, parentheses
+            const rawName = line.replace(codeMatch[0], '').trim();
+            const name = rawName.replace(/[^\u4e00-\u9fa5\u3400-\u4dbfa-zA-Z0-9\-\uff08\uff09\(\)]/g, '').trim();
             products.push({ code, name: name || '未识别名称', selected: true });
           }
         }
@@ -1450,11 +1448,13 @@ createApp({
     },
 
     cleanOcrText(text) {
-      // Strip OCR noise: all quote variants (smart quotes, ASCII apostrophe, backtick)
-      text = text.replace(/[''""'"`]/g, '');
-      // Strip common OCR noise symbols at start/end of line (。· bullets etc.)
-      text = text.replace(/^[\s\u3000\u3002\u00b7\u2022\u2018\u2019\u201c\u201d\uff0e\uff01\uff1f\u30fb\u300c\u300d\u300e\u300f]+/, '');
-      text = text.replace(/[\s\u3000\u3002\u00b7\u2022\u2018\u2019\u201c\u201d\uff0e\uff01\uff1f\u30fb\u300c\u300d\u300e\u300f]+$/, '');
+      // Strip all quote/apostrophe variants using explicit Unicode escapes (avoids encoding ambiguity)
+      // U+2018/2019 curly single, U+201C/201D curly double, U+0022 ASCII quote, U+0027 apostrophe,
+      // U+0060 backtick, U+FF02 fullwidth quote, U+FF07 fullwidth apostrophe, U+2033 double prime
+      text = text.replace(/[\u2018\u2019\u201c\u201d\u0022\u0027\u0060\uff02\uff07\u2033\u2032]/g, '');
+      // Strip common OCR noise symbols at start/end of line (。· bullets etc.) — explicit Unicode escapes
+      text = text.replace(/^[\s\u3000\u3002\u00b7\u2022\u2018\u2019\u201c\u201d\uff0e\uff01\uff1f\u30fb\u300c\u300d\u300e\u300f\uff08\uff09\u3010\u3011\u300a\u300b]+/, '');
+      text = text.replace(/[\s\u3000\u3002\u00b7\u2022\u2018\u2019\u201c\u201d\uff0e\uff01\uff1f\u30fb\u300c\u300d\u300e\u300f\uff08\uff09\u3010\u3011\u300a\u300b]+$/, '');
       // Remove spaces/fullwidth spaces between digits
       text = text.replace(/(\d)[\s\u3000]+(\d)/g, '$1$2');
       // Fix O/o misread as digit between digits (apply twice for consecutive)
