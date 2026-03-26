@@ -1557,41 +1557,71 @@ createApp({
       return code.replace(/\.\w{2,3}$/i, '');
     },
 
-    // Background verification: query EastMoney for each preview product and annotate in-place
+    // Extract core Chinese chars for name comparison (strips A/B/C share class and digits)
+    fundNameKey(name) {
+      return name.replace(/\s+/g, '').replace(/[A-Za-z0-9（）()【】]/g, '').slice(0, 6);
+    },
+
+    // Verify one fund — updates p.verifyStatus and p.officialName in place
+    async verifySingleFund(p) {
+      const bare = this.bareCode(p.code);
+      try {
+        // ── Primary source: EastMoney fund search (JSONP, no CORS) ──────────────
+        const data = await jsonp(
+          'https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key=' +
+          encodeURIComponent(bare)
+        );
+
+        // The API may return a plain array OR wrap results in EastmoneyFund_OverAll
+        const list = Array.isArray(data)                                        ? data
+          : Array.isArray(data?.EastmoneyFund_OverAll?.FundBaseInfoList)        ? data.EastmoneyFund_OverAll.FundBaseInfoList
+          : Array.isArray(data?.Data)                                           ? data.Data
+          : [];
+
+        if (list.length === 0) { p.verifyStatus = 'notfound'; return; }
+
+        // Match by code — try every plausible field name returned by the API
+        let hit = list.find(f =>
+          String(f.FundCode || f.fundCode || f.FCODE || f.code || '') === bare
+        );
+        // If we searched an exact 6-digit code and got exactly one result back,
+        // it must be the right fund even if the field name isn't what we expected
+        if (!hit && list.length === 1) hit = list[0];
+        // If multiple results but still no exact code match, pick the one whose
+        // code starts with our bare code (handles edge cases like leading zeros)
+        if (!hit) hit = list.find(f =>
+          String(f.FundCode || f.fundCode || f.FCODE || f.code || '').startsWith(bare)
+        );
+
+        if (!hit) { p.verifyStatus = 'notfound'; return; }
+
+        // Extract official name — try every plausible field name
+        const officialFull  = (hit.FundFullName || hit.FundName || hit.FNAME || hit.name || '').replace(/\s+/g, '');
+        const officialShort = (hit.FundShortName || hit.ShortName || hit.SNAME || '').replace(/\s+/g, '');
+        p.officialName = officialFull || officialShort;
+
+        // Name check using core Chinese chars — ignores share class (A/B/C), spaces, punctuation
+        // e.g. "中欧瑾泉A" → key "中欧瑾泉" → found in "中欧瑾泉混合型证券投资基金A类" ✓
+        const key = this.fundNameKey(p.name);
+        const nameOk = key.length < 2 ||
+          officialFull.includes(key) || officialShort.includes(key);
+        p.verifyStatus = nameOk ? 'ok' : 'warn';
+
+      } catch (_) {
+        p.verifyStatus = null; // silent fail — don't block user on network issues
+      }
+    },
+
+    // Run verification in parallel batches for speed
     async verifyPreviewProducts() {
-      const snapshot = this.previewProducts; // capture current list reference
-      for (const p of snapshot) {
-        // Abort if user cleared the preview while we were running
-        if (this.previewProducts !== snapshot) break;
-        if (!this.isValidCode(p.code)) continue;
-        p.verifyStatus = 'checking';
-        try {
-          const bare = this.bareCode(p.code);
-          const data = await jsonp(
-            'https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key=' + encodeURIComponent(bare)
-          );
-          const list = (data && data.EastmoneyFund_OverAll && data.EastmoneyFund_OverAll.FundBaseInfoList) || [];
-          const hit = list.find(f => f.FundCode === bare);
-          if (!hit) {
-            p.verifyStatus = 'notfound';
-          } else {
-            const officialFull  = (hit.FundFullName  || '').replace(/\s+/g, '');
-            const officialShort = (hit.FundShortName || '').replace(/\s+/g, '');
-            p.officialName = officialFull || officialShort;
-            // Name check: extracted name should be a substring of the official full name,
-            // or share the first 4+ Chinese characters — tolerates truncation & OCR variations
-            const extracted = p.name.replace(/\s+/g, '');
-            const keyChars  = extracted.match(/[\u4e00-\u9fa5A-Za-z0-9]{2,}/g) || [];
-            const nameOk = keyChars.some(k =>
-              officialFull.includes(k) || officialShort.includes(k)
-            );
-            p.verifyStatus = nameOk ? 'ok' : 'warn';
-          }
-        } catch (_) {
-          p.verifyStatus = null; // silent fail — network issue etc., don't block user
-        }
-        // Brief pause between requests to be polite to the API
-        await new Promise(r => setTimeout(r, 150));
+      const snapshot = this.previewProducts;
+      const items = snapshot.filter(p => this.isValidCode(p.code));
+      // Mark all upfront so the user sees progress immediately
+      items.forEach(p => { p.verifyStatus = 'checking'; });
+      const BATCH = 5; // 5 concurrent requests — fast without hammering the API
+      for (let i = 0; i < items.length; i += BATCH) {
+        if (this.previewProducts !== snapshot) break; // user cancelled preview
+        await Promise.all(items.slice(i, i + BATCH).map(p => this.verifySingleFund(p)));
       }
     },
 
