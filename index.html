@@ -635,94 +635,32 @@
       flex-wrap: wrap;
     }
 
-    /* Verify View */
-    .verify-result-card {
-      background: var(--card);
-      border-radius: var(--radius);
-      padding: 20px;
-      box-shadow: var(--shadow);
-      margin-top: 16px;
-    }
-    .verify-fund-name {
-      font-size: 15px;
-      font-weight: 600;
-      line-height: 1.4;
-      margin-bottom: 4px;
-    }
-    .verify-fund-code {
-      font-size: 13px;
-      color: var(--text-secondary);
-      margin-bottom: 10px;
-    }
-    .verify-fund-type {
-      display: inline-block;
-      font-size: 12px;
-      color: var(--primary);
-      background: var(--primary-light);
-      padding: 2px 10px;
-      border-radius: 20px;
-      margin-bottom: 18px;
-    }
-    .verify-links {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .verify-link-btn {
-      display: flex;
+    /* Inline verify status indicators (shown in import preview table) */
+    .vstatus {
+      display: inline-flex;
       align-items: center;
-      gap: 10px;
-      padding: 11px 14px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border);
-      background: var(--card);
-      font-size: 14px;
-      color: var(--text);
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1;
       text-decoration: none;
-      transition: background var(--transition);
     }
-    .verify-link-btn:hover { background: var(--bg); }
-    .verify-link-btn .site-badge {
-      font-size: 11px;
-      font-weight: 600;
-      color: #fff;
-      padding: 2px 6px;
-      border-radius: 4px;
-      flex-shrink: 0;
+    .vstatus-checking { color: var(--text-tertiary); font-size: 12px; letter-spacing: -2px; }
+    .vstatus-ok  { background: var(--success); color: #fff; cursor: pointer; }
+    .vstatus-warn { background: #f59e0b; color: #fff; cursor: pointer; }
+    .vstatus-err { background: var(--danger); color: #fff; }
+    .verify-hint {
+      font-size: 10px;
+      color: #b45309;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 130px;
     }
-    .badge-eastmoney { background: #e8171f; }
-    .badge-xueqiu    { background: #f5a623; }
-    .badge-zofund    { background: var(--primary); }
-    .verify-list-item {
-      background: var(--card);
-      border-radius: var(--radius-sm);
-      padding: 12px 14px;
-      margin-bottom: 8px;
-      box-shadow: var(--shadow);
-      cursor: pointer;
-      border: 1px solid var(--border);
-      transition: background var(--transition);
-    }
-    .verify-list-item:active { background: var(--primary-light); }
-    .verify-list-item .v-fund-name {
-      font-size: 14px;
-      font-weight: 500;
-      margin-bottom: 3px;
-    }
-    .verify-list-item .v-fund-meta {
-      font-size: 12px;
-      color: var(--text-secondary);
-      display: flex;
-      gap: 10px;
-    }
-    .ext-link-icon {
-      color: var(--primary);
-      font-size: 11px;
-      text-decoration: none;
-      opacity: 0.8;
-      padding: 2px 4px;
-    }
-    .ext-link-icon:hover { opacity: 1; }
   </style>
 </head>
 <body>
@@ -1000,22 +938,38 @@
       <div class="card" style="padding:12px;overflow-x:auto;">
         <table class="preview-table">
           <thead>
-            <tr><th style="width:30px;"></th><th style="width:80px;">代码</th><th>名称</th><th style="width:24px;"></th></tr>
+            <tr><th style="width:30px;"></th><th style="width:80px;">代码</th><th>名称</th><th style="width:22px;"></th></tr>
           </thead>
           <tbody>
             <tr v-for="(p, i) in previewProducts" :key="i" :class="{warn: !isValidCode(p.code)}">
               <td><input type="checkbox" v-model="p.selected"></td>
               <td><input v-model="p.code" :class="{warn: !isValidCode(p.code)}"></td>
-              <td><input v-model="p.name"></td>
               <td>
-                <a
-                  v-if="isValidCode(p.code)"
-                  class="ext-link-icon"
-                  :href="'https://fund.eastmoney.com/' + bareCode(p.code) + '.html'"
-                  target="_blank"
-                  rel="noopener"
-                  title="在天天基金核对"
-                >↗</a>
+                <input v-model="p.name">
+                <!-- Name mismatch hint: show official name for reference -->
+                <div class="verify-hint" v-if="p.verifyStatus === 'warn' && p.officialName" :title="p.officialName">
+                  官方：{{ p.officialName }}
+                </div>
+              </td>
+              <td style="text-align:center;vertical-align:middle;">
+                <!-- Checking -->
+                <span class="vstatus vstatus-checking" v-if="p.verifyStatus === 'checking'" title="核对中…">···</span>
+                <!-- OK: code & name match official data, click to open fund page -->
+                <a  class="vstatus vstatus-ok"
+                    v-else-if="p.verifyStatus === 'ok'"
+                    :href="'https://fund.eastmoney.com/' + bareCode(p.code) + '.html'"
+                    target="_blank" rel="noopener"
+                    title="核对通过 · 点击在天天基金查看">✓</a>
+                <!-- Warn: code found but name differs -->
+                <a  class="vstatus vstatus-warn"
+                    v-else-if="p.verifyStatus === 'warn'"
+                    :href="'https://fund.eastmoney.com/' + bareCode(p.code) + '.html'"
+                    target="_blank" rel="noopener"
+                    :title="'名称与官方不符，建议核查\n官方：' + p.officialName">!</a>
+                <!-- Not found in EastMoney -->
+                <span class="vstatus vstatus-err"
+                      v-else-if="p.verifyStatus === 'notfound'"
+                      title="天天基金未收录该基金代码，请确认是否正确">?</span>
               </td>
             </tr>
           </tbody>
@@ -1027,96 +981,6 @@
         </button>
         <button class="btn btn-outline" @click="previewProducts = []">取消</button>
       </div>
-    </div>
-  </div>
-
-  <!-- Verify View -->
-  <div class="container" v-if="currentView === 'verify'">
-    <div class="input-group">
-      <label>基金信息核对</label>
-      <div style="display:flex;gap:8px;">
-        <div class="input-wrap" style="flex:1">
-          <input
-            type="text"
-            v-model="verifyQuery"
-            placeholder="输入基金代码或名称..."
-            @keyup.enter="searchFundInfo"
-            ref="verifyInput"
-          >
-        </div>
-        <button class="btn btn-primary" @click="searchFundInfo" :disabled="verifyLoading" style="flex-shrink:0">
-          {{ verifyLoading ? '查询中' : '查询' }}
-        </button>
-      </div>
-      <div class="text-sm text-muted mt-8">数据来源：天天基金，支持代码或名称模糊搜索</div>
-    </div>
-
-    <!-- Loading -->
-    <div class="card" v-if="verifyLoading" style="text-align:center;padding:24px;color:var(--text-secondary);font-size:14px;">
-      正在查询中...
-    </div>
-
-    <!-- Error -->
-    <div class="card" v-if="verifyError && !verifyLoading" style="color:var(--danger);padding:16px;font-size:14px;">
-      {{ verifyError }}
-    </div>
-
-    <!-- Results List (multiple matches) -->
-    <div v-if="verifyResults.length > 0 && !verifySelected">
-      <div class="section-title" style="margin-top:4px">找到 {{ verifyResults.length }} 个结果，请选择</div>
-      <div
-        class="verify-list-item"
-        v-for="fund in verifyResults"
-        :key="fund.FundCode"
-        @click="selectVerifyFund(fund)"
-      >
-        <div class="v-fund-name">{{ fund.FundFullName }}</div>
-        <div class="v-fund-meta">
-          <span>{{ fund.FundCode }}</span>
-          <span>{{ fund.FundType }}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Selected Fund Detail -->
-    <div v-if="verifySelected" class="verify-result-card fade-in">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;">
-        <div style="flex:1;min-width:0;">
-          <div class="verify-fund-name">{{ verifySelected.FundFullName }}</div>
-          <div class="verify-fund-code">{{ verifySelected.FundCode }}</div>
-          <span class="verify-fund-type">{{ verifySelected.FundType }}</span>
-        </div>
-        <button class="icon-btn" @click="verifySelected = null; verifyResults = []" style="flex-shrink:0;margin-left:8px;">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-          </svg>
-        </button>
-      </div>
-
-      <div class="section-title">在以下平台核对</div>
-      <div class="verify-links">
-        <a class="verify-link-btn" :href="'https://fund.eastmoney.com/' + bareCode(verifySelected.FundCode) + '.html'" target="_blank" rel="noopener">
-          <span class="site-badge badge-eastmoney">天天基金</span>
-          查看基金详情、净值、持仓
-          <svg style="margin-left:auto;flex-shrink:0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-        </a>
-        <a class="verify-link-btn" :href="'https://xueqiu.com/S/F' + bareCode(verifySelected.FundCode)" target="_blank" rel="noopener">
-          <span class="site-badge badge-xueqiu">雪  球</span>
-          查看讨论、公告、分析
-          <svg style="margin-left:auto;flex-shrink:0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-        </a>
-        <a class="verify-link-btn" href="https://www.zofund.com/" target="_blank" rel="noopener">
-          <span class="site-badge badge-zofund">中欧官网</span>
-          官方产品信息核对
-          <svg style="margin-left:auto;flex-shrink:0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-        </a>
-      </div>
-    </div>
-
-    <!-- Empty state -->
-    <div class="empty-state" v-if="!verifyLoading && !verifyError && verifyResults.length === 0 && !verifySelected">
-      <div class="empty-icon">🔍</div>
-      <p>输入基金代码（如 005787）<br>或名称关键字进行查询<br>通过多个平台交叉核对基金信息</p>
     </div>
   </div>
 
@@ -1139,12 +1003,6 @@
         <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
       </svg>
       导入
-    </button>
-    <button class="nav-item" :class="{active: currentView === 'verify'}" @click="switchView('verify')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
-      </svg>
-      核对
     </button>
   </nav>
 </div>
@@ -1274,13 +1132,6 @@ createApp({
       ocrStatus: '',
       previewProducts: [],
 
-      // Verify
-      verifyQuery: '',
-      verifyLoading: false,
-      verifyError: '',
-      verifyResults: [],
-      verifySelected: null,
-
       // Toast
       toast: { message: '', visible: false, timer: null }
     };
@@ -1330,9 +1181,6 @@ createApp({
       this.queryResult = null;
       this.resultVisible = false;
       this.previewProducts = [];
-      this.verifyResults = [];
-      this.verifySelected = null;
-      this.verifyError = '';
     },
 
     // === Query View ===
@@ -1537,7 +1385,7 @@ createApp({
           const name = String(rows[r][nameCol] || '').trim().replace(/\s+/g, '');
           if (code && name) {
             code = this.normalizeCode(code);
-            products.push({ code, name, selected: true });
+            products.push({ code, name, selected: true, verifyStatus: null, officialName: '' });
           }
         }
 
@@ -1547,6 +1395,7 @@ createApp({
         }
         this.previewProducts = products;
         this.showToast(`已识别 ${products.length} 条产品`);
+        this.verifyPreviewProducts();
       } catch (e) {
         this.showToast('Excel解析失败: ' + e.message);
       }
@@ -1605,7 +1454,7 @@ createApp({
             } else if (chineseBefore) {
               name = chineseBefore[0];
             }
-            products.push({ code, name: name.replace(/\s+/g, '') || '未识别名称', selected: true });
+            products.push({ code, name: name.replace(/\s+/g, '') || '未识别名称', selected: true, verifyStatus: null, officialName: '' });
           }
         }
 
@@ -1614,6 +1463,7 @@ createApp({
         if (products.length > 0) {
           this.previewProducts = products;
           this.showToast(`已从PDF中识别 ${products.length} 条产品`);
+          this.verifyPreviewProducts();
         } else {
           this.showToast('未在PDF中识别到有效的基金代码（如005787.OF或005787）');
         }
@@ -1660,7 +1510,7 @@ createApp({
             // Whitelist approach: keep only Chinese chars, letters, digits, hyphens, parentheses
             const rawName = line.replace(codeMatch[0], '').trim();
             const name = rawName.replace(/[^\u4e00-\u9fa5\u3400-\u4dbfa-zA-Z0-9\-\uff08\uff09\(\)]/g, '').trim();
-            products.push({ code, name: name || '未识别名称', selected: true });
+            products.push({ code, name: name || '未识别名称', selected: true, verifyStatus: null, officialName: '' });
           }
         }
 
@@ -1669,6 +1519,7 @@ createApp({
         if (products.length > 0) {
           this.ocrStatus = '';
           this.showToast(`识别完成，共 ${products.length} 条记录`);
+          this.verifyPreviewProducts();
         } else {
           this.ocrStatus = '';
           this.showToast('未识别到有效的基金代码（如005787.OF或005787）');
@@ -1701,41 +1552,47 @@ createApp({
       return text;
     },
 
-    // === Verify View ===
+    // Strip exchange suffix (.OF .SZ .SH …) → bare 6-digit code for external URLs
     bareCode(code) {
-      // Strip exchange suffix (.OF, .SZ, .SH, etc.) to get bare 6-digit code
       return code.replace(/\.\w{2,3}$/i, '');
     },
 
-    async searchFundInfo() {
-      const q = this.verifyQuery.trim();
-      if (!q) { this.showToast('请输入基金代码或名称'); return; }
-      this.verifyLoading = true;
-      this.verifyError = '';
-      this.verifyResults = [];
-      this.verifySelected = null;
-      try {
-        const data = await jsonp(
-          'https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key=' + encodeURIComponent(q)
-        );
-        const list = (data && data.EastmoneyFund_OverAll && data.EastmoneyFund_OverAll.FundBaseInfoList) || [];
-        if (list.length === 0) {
-          this.verifyError = '未找到匹配的基金，请确认代码或名称是否正确';
-        } else if (list.length === 1) {
-          this.verifySelected = list[0];
-        } else {
-          this.verifyResults = list;
+    // Background verification: query EastMoney for each preview product and annotate in-place
+    async verifyPreviewProducts() {
+      const snapshot = this.previewProducts; // capture current list reference
+      for (const p of snapshot) {
+        // Abort if user cleared the preview while we were running
+        if (this.previewProducts !== snapshot) break;
+        if (!this.isValidCode(p.code)) continue;
+        p.verifyStatus = 'checking';
+        try {
+          const bare = this.bareCode(p.code);
+          const data = await jsonp(
+            'https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key=' + encodeURIComponent(bare)
+          );
+          const list = (data && data.EastmoneyFund_OverAll && data.EastmoneyFund_OverAll.FundBaseInfoList) || [];
+          const hit = list.find(f => f.FundCode === bare);
+          if (!hit) {
+            p.verifyStatus = 'notfound';
+          } else {
+            const officialFull  = (hit.FundFullName  || '').replace(/\s+/g, '');
+            const officialShort = (hit.FundShortName || '').replace(/\s+/g, '');
+            p.officialName = officialFull || officialShort;
+            // Name check: extracted name should be a substring of the official full name,
+            // or share the first 4+ Chinese characters — tolerates truncation & OCR variations
+            const extracted = p.name.replace(/\s+/g, '');
+            const keyChars  = extracted.match(/[\u4e00-\u9fa5A-Za-z0-9]{2,}/g) || [];
+            const nameOk = keyChars.some(k =>
+              officialFull.includes(k) || officialShort.includes(k)
+            );
+            p.verifyStatus = nameOk ? 'ok' : 'warn';
+          }
+        } catch (_) {
+          p.verifyStatus = null; // silent fail — network issue etc., don't block user
         }
-      } catch (e) {
-        this.verifyError = '查询失败：' + e.message;
-      } finally {
-        this.verifyLoading = false;
+        // Brief pause between requests to be polite to the API
+        await new Promise(r => setTimeout(r, 150));
       }
-    },
-
-    selectVerifyFund(fund) {
-      this.verifySelected = fund;
-      this.verifyResults = [];
     },
 
     normalizeCode(code) {
