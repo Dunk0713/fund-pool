@@ -650,16 +650,11 @@
     }
     .vstatus-checking { color: var(--text-tertiary); font-size: 12px; letter-spacing: -2px; }
     .vstatus-ok  { background: var(--success); color: #fff; cursor: pointer; }
-    .vstatus-warn { background: #f59e0b; color: #fff; cursor: pointer; }
     .vstatus-err { background: var(--danger); color: #fff; }
-    .verify-hint {
-      font-size: 10px;
-      color: #b45309;
-      margin-top: 2px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 130px;
+    /* Blue border on inputs whose names were auto-corrected from official API data */
+    .preview-table input.name-corrected {
+      border-color: var(--primary);
+      color: var(--primary);
     }
   </style>
 </head>
@@ -945,31 +940,21 @@
               <td><input type="checkbox" v-model="p.selected"></td>
               <td><input v-model="p.code" :class="{warn: !isValidCode(p.code)}"></td>
               <td>
-                <input v-model="p.name">
-                <!-- Name mismatch hint: show official name for reference -->
-                <div class="verify-hint" v-if="p.verifyStatus === 'warn' && p.officialName" :title="p.officialName">
-                  官方：{{ p.officialName }}
-                </div>
+                <!-- Blue border = name was auto-corrected from official API source -->
+                <input v-model="p.name"
+                       :class="{'name-corrected': p.nameCorrected}"
+                       :title="p.nameCorrected ? '已自动修正为官方名称，可手动编辑' : ''">
               </td>
               <td style="text-align:center;vertical-align:middle;">
-                <!-- Checking -->
                 <span class="vstatus vstatus-checking" v-if="p.verifyStatus === 'checking'" title="核对中…">···</span>
-                <!-- OK: code & name match official data, click to open fund page -->
                 <a  class="vstatus vstatus-ok"
                     v-else-if="p.verifyStatus === 'ok'"
                     :href="'https://fund.eastmoney.com/' + bareCode(p.code) + '.html'"
                     target="_blank" rel="noopener"
-                    title="核对通过 · 点击在天天基金查看">✓</a>
-                <!-- Warn: code found but name differs -->
-                <a  class="vstatus vstatus-warn"
-                    v-else-if="p.verifyStatus === 'warn'"
-                    :href="'https://fund.eastmoney.com/' + bareCode(p.code) + '.html'"
-                    target="_blank" rel="noopener"
-                    :title="'名称与官方不符，建议核查\n官方：' + p.officialName">!</a>
-                <!-- Not found in EastMoney -->
+                    :title="p.nameCorrected ? '代码已核对，名称已自动修正为官方名称 · 点击在天天基金查看' : '代码与名称核对通过 · 点击在天天基金查看'">✓</a>
                 <span class="vstatus vstatus-err"
                       v-else-if="p.verifyStatus === 'notfound'"
-                      title="天天基金未收录该基金代码，请确认是否正确">?</span>
+                      title="天天基金未收录该代码，名称无法自动修正，请人工核查">?</span>
               </td>
             </tr>
           </tbody>
@@ -1402,7 +1387,7 @@ createApp({
           const name = String(rows[r][nameCol] || '').trim().replace(/\s+/g, '');
           if (code && name) {
             code = this.normalizeCode(code);
-            products.push({ code, name, selected: true, verifyStatus: null, officialName: '' });
+            products.push({ code, name, selected: true, verifyStatus: null, officialName: '', nameCorrected: false });
           }
         }
 
@@ -1471,7 +1456,7 @@ createApp({
             } else if (chineseBefore) {
               name = chineseBefore[0];
             }
-            products.push({ code, name: name.replace(/\s+/g, '') || '未识别名称', selected: true, verifyStatus: null, officialName: '' });
+            products.push({ code, name: name.replace(/\s+/g, '') || '未识别名称', selected: true, verifyStatus: null, officialName: '', nameCorrected: false });
           }
         }
 
@@ -1570,7 +1555,7 @@ createApp({
             const rawName = line.replace(codeMatch[0], '').trim();
             // Keep Chinese chars, letters, digits, hyphens, parentheses only
             const name = rawName.replace(/[^\u4e00-\u9fa5\u3400-\u4dbfa-zA-Z0-9\-\uff08\uff09\(\)]/g, '').trim();
-            products.push({ code, name: name || '未识别名称', selected: true, verifyStatus: null, officialName: '' });
+            products.push({ code, name: name || '未识别名称', selected: true, verifyStatus: null, officialName: '', nameCorrected: false });
           }
         }
 
@@ -1662,24 +1647,29 @@ createApp({
         if (!hit) hit = list.find(f => String(f.CODE || f.FundCode || f.FCODE || f.code || '').startsWith(bare));
 
         if (hit) {
-          // NAME is the official short name, e.g. "中欧瑾泉灵活配置混合A"
+          // NAME = official short name, e.g. "中欧瑾泉灵活配置混合A"
           const officialName = (hit.NAME || hit.FundFullName || hit.FundName || hit.name || '').replace(/\s+/g, '');
-          p.officialName = officialName;
-          const key = this.fundNameKey(p.name);
-          // e.g. user "中欧瑾泉A" → key "中欧瑾泉" → in "中欧瑾泉灵活配置混合A" ✓
-          p.verifyStatus = (key.length < 2 || officialName.includes(key)) ? 'ok' : 'warn';
+          if (officialName) {
+            p.officialName = officialName;
+            p.name = officialName;       // overwrite OCR Chinese with official source — 100% accurate
+            p.nameCorrected = true;
+          }
+          p.verifyStatus = 'ok';
           return;
         }
 
-        // ── Fallback: fundgz direct lookup by code (sequential, hardcoded callback) ─
+        // ── Fallback: fundgz direct lookup by code ───────────────────────────────
         const gz = await fundgzLookup(bare);
         if (gz && gz.fundcode === bare) {
           const officialName = (gz.name || '').replace(/\s+/g, '');
-          p.officialName = officialName;
-          const key = this.fundNameKey(p.name);
-          p.verifyStatus = (key.length < 2 || officialName.includes(key)) ? 'ok' : 'warn';
+          if (officialName) {
+            p.officialName = officialName;
+            p.name = officialName;
+            p.nameCorrected = true;
+          }
+          p.verifyStatus = 'ok';
         } else {
-          p.verifyStatus = 'notfound';
+          p.verifyStatus = 'notfound'; // name stays as OCR output; user must verify manually
         }
 
       } catch (_) {
