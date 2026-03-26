@@ -1097,6 +1097,23 @@ function jsonp(url, callbackParam = 'callback') {
   });
 }
 
+// fundgz.1234567.com.cn uses a hardcoded callback name `jsonpgz` — requests must be sequential.
+// We chain each call onto the previous via a shared promise so concurrent callers queue up.
+let _fundgzSeq = Promise.resolve();
+function fundgzLookup(bare) {
+  const curr = _fundgzSeq.then(() => new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), 4000);
+    window.jsonpgz = (d) => { clearTimeout(timer); resolve(d); };
+    const s = document.createElement('script');
+    s.src = 'https://fundgz.1234567.com.cn/js/' + bare + '.js?rt=' + Date.now();
+    s.onerror = () => { clearTimeout(timer); resolve(null); };
+    document.head.appendChild(s);
+    setTimeout(() => s.parentNode && s.parentNode.removeChild(s), 5000);
+  }));
+  _fundgzSeq = curr.catch(() => {}); // keep chain alive even on error
+  return curr;
+}
+
 createApp({
   data() {
     return {
@@ -1566,46 +1583,45 @@ createApp({
     async verifySingleFund(p) {
       const bare = this.bareCode(p.code);
       try {
-        // ── Primary source: EastMoney fund search (JSONP, no CORS) ──────────────
+        // ── Primary source: EastMoney suggestion API (JSONP) ────────────────────
+        // Actual response shape (confirmed): {ErrCode:0, Datas:[{CODE:"001110", NAME:"中欧瑾泉灵活配置混合A", ...}]}
         const data = await jsonp(
           'https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key=' +
           encodeURIComponent(bare)
         );
 
-        // The API may return a plain array OR wrap results in EastmoneyFund_OverAll
-        const list = Array.isArray(data)                                        ? data
-          : Array.isArray(data?.EastmoneyFund_OverAll?.FundBaseInfoList)        ? data.EastmoneyFund_OverAll.FundBaseInfoList
-          : Array.isArray(data?.Data)                                           ? data.Data
+        // Parse: real field is data.Datas (not EastmoneyFund_OverAll which doesn't exist)
+        const list = Array.isArray(data?.Datas)                                          ? data.Datas
+          : Array.isArray(data)                                                          ? data
+          : Array.isArray(data?.EastmoneyFund_OverAll?.FundBaseInfoList)                 ? data.EastmoneyFund_OverAll.FundBaseInfoList
+          : Array.isArray(data?.Data)                                                    ? data.Data
           : [];
 
-        if (list.length === 0) { p.verifyStatus = 'notfound'; return; }
+        // Match by code — actual field name is CODE (uppercase)
+        let hit = list.find(f => (f.CODE || f.FundCode || f.FCODE || f.code || '') === bare);
+        if (!hit && list.length === 1) hit = list[0]; // exact-code search → 1 result = must be ours
+        if (!hit) hit = list.find(f => String(f.CODE || f.FundCode || f.FCODE || f.code || '').startsWith(bare));
 
-        // Match by code — try every plausible field name returned by the API
-        let hit = list.find(f =>
-          String(f.FundCode || f.fundCode || f.FCODE || f.code || '') === bare
-        );
-        // If we searched an exact 6-digit code and got exactly one result back,
-        // it must be the right fund even if the field name isn't what we expected
-        if (!hit && list.length === 1) hit = list[0];
-        // If multiple results but still no exact code match, pick the one whose
-        // code starts with our bare code (handles edge cases like leading zeros)
-        if (!hit) hit = list.find(f =>
-          String(f.FundCode || f.fundCode || f.FCODE || f.code || '').startsWith(bare)
-        );
+        if (hit) {
+          // NAME is the official short name, e.g. "中欧瑾泉灵活配置混合A"
+          const officialName = (hit.NAME || hit.FundFullName || hit.FundName || hit.name || '').replace(/\s+/g, '');
+          p.officialName = officialName;
+          const key = this.fundNameKey(p.name);
+          // e.g. user "中欧瑾泉A" → key "中欧瑾泉" → in "中欧瑾泉灵活配置混合A" ✓
+          p.verifyStatus = (key.length < 2 || officialName.includes(key)) ? 'ok' : 'warn';
+          return;
+        }
 
-        if (!hit) { p.verifyStatus = 'notfound'; return; }
-
-        // Extract official name — try every plausible field name
-        const officialFull  = (hit.FundFullName || hit.FundName || hit.FNAME || hit.name || '').replace(/\s+/g, '');
-        const officialShort = (hit.FundShortName || hit.ShortName || hit.SNAME || '').replace(/\s+/g, '');
-        p.officialName = officialFull || officialShort;
-
-        // Name check using core Chinese chars — ignores share class (A/B/C), spaces, punctuation
-        // e.g. "中欧瑾泉A" → key "中欧瑾泉" → found in "中欧瑾泉混合型证券投资基金A类" ✓
-        const key = this.fundNameKey(p.name);
-        const nameOk = key.length < 2 ||
-          officialFull.includes(key) || officialShort.includes(key);
-        p.verifyStatus = nameOk ? 'ok' : 'warn';
+        // ── Fallback: fundgz direct lookup by code (sequential, hardcoded callback) ─
+        const gz = await fundgzLookup(bare);
+        if (gz && gz.fundcode === bare) {
+          const officialName = (gz.name || '').replace(/\s+/g, '');
+          p.officialName = officialName;
+          const key = this.fundNameKey(p.name);
+          p.verifyStatus = (key.length < 2 || officialName.includes(key)) ? 'ok' : 'warn';
+        } else {
+          p.verifyStatus = 'notfound';
+        }
 
       } catch (_) {
         p.verifyStatus = null; // silent fail — don't block user on network issues
