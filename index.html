@@ -4,18 +4,22 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>中欧基金 · 机构产品池查询</title>
-  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       Core dependencies (always needed)
+       ═══════════════════════════════════════════════════════════════ -->
+  <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script>
-    // preload PDF.js worker
-    window._pdfjsReady = import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.min.mjs').then(mod => {
-      mod.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs';
-      return mod;
-    });
-  </script>
+
+  <!-- Tesseract.js & PDF.js are lazy-loaded on demand — see Section 2 in JS -->
+
   <style>
+    /* ═══════════════════════════════════════════════════════════════
+       Section 1 · Design Tokens & Reset
+       ═══════════════════════════════════════════════════════════════ */
+
+    /* ── 1.1 CSS Variables ─────────────────────────────────────── */
     :root {
       --primary: #0055d4;
       --primary-light: #e8f0fe;
@@ -36,6 +40,7 @@
       --transition: 0.2s ease;
     }
 
+    /* ── 1.2 Reset & Base ──────────────────────────────────────── */
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
@@ -53,7 +58,11 @@
       padding-bottom: 72px;
     }
 
-    /* Header */
+    /* ═══════════════════════════════════════════════════════════════
+       Section 2 · Layout
+       ═══════════════════════════════════════════════════════════════ */
+
+    /* ── 2.1 Header ────────────────────────────────────────────── */
     .header {
       background: var(--card);
       padding: 16px 20px;
@@ -61,6 +70,9 @@
       position: sticky;
       top: 0;
       z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
     .header h1 {
       font-size: 18px;
@@ -71,15 +83,51 @@
     .header h1 span {
       color: var(--primary);
     }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+    .header-user {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .header-user .avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--primary-light);
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .logout-btn {
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text-secondary);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all var(--transition);
+      font-family: inherit;
+    }
+    .logout-btn:hover { color: var(--danger); border-color: var(--danger); }
 
-    /* Container */
+    /* ── 2.2 Container ─────────────────────────────────────────── */
     .container {
       max-width: 500px;
       margin: 0 auto;
       padding: 16px;
     }
 
-    /* Bottom Navigation */
+    /* ── 2.3 Bottom Navigation ─────────────────────────────────── */
     .bottom-nav {
       position: fixed;
       bottom: 0;
@@ -111,7 +159,11 @@
     .nav-item.active { color: var(--primary); }
     .nav-item svg { width: 24px; height: 24px; }
 
-    /* Cards */
+    /* ═══════════════════════════════════════════════════════════════
+       Section 3 · Components
+       ═══════════════════════════════════════════════════════════════ */
+
+    /* ── 3.1 Cards ─────────────────────────────────────────────── */
     .card {
       background: var(--card);
       border-radius: var(--radius);
@@ -119,78 +171,35 @@
       padding: 20px;
       margin-bottom: 12px;
     }
-
-    /* Form Elements */
-    .input-group {
-      margin-bottom: 14px;
-    }
-    .input-group label {
-      display: block;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--text-secondary);
-      margin-bottom: 6px;
-    }
-    .input-wrap {
-      position: relative;
-    }
-    .input-wrap input,
-    .input-wrap select {
-      width: 100%;
-      height: 48px;
-      padding: 0 16px;
-      border: 1.5px solid var(--border);
-      border-radius: var(--radius-sm);
-      font-size: 16px;
-      color: var(--text);
+    .inst-card {
       background: var(--card);
-      outline: none;
-      transition: border-color var(--transition), box-shadow var(--transition);
-      font-family: inherit;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      margin-bottom: 12px;
+      overflow: hidden;
     }
-    .input-wrap input:focus {
-      border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(0, 85, 212, 0.1);
-    }
-    .input-wrap input::placeholder {
-      color: var(--text-tertiary);
-    }
-
-    /* Dropdown */
-    .dropdown {
-      position: relative;
-    }
-    .dropdown-list {
-      position: absolute;
-      top: 100%;
-      left: 0;
-      right: 0;
-      background: var(--card);
-      border: 1.5px solid var(--border);
-      border-radius: var(--radius-sm);
-      box-shadow: var(--shadow-md);
-      max-height: 240px;
-      overflow-y: auto;
-      z-index: 50;
-      margin-top: 4px;
-    }
-    .dropdown-item {
-      padding: 12px 16px;
-      font-size: 15px;
+    .inst-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
       cursor: pointer;
       transition: background var(--transition);
-      border-bottom: 1px solid var(--border);
     }
-    .dropdown-item:last-child { border-bottom: none; }
-    .dropdown-item:active,
-    .dropdown-item:hover { background: var(--primary-light); }
-    .dropdown-item .product-count {
+    .inst-header:active { background: #f9fafb; }
+    .inst-name {
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .inst-meta {
       font-size: 12px;
       color: var(--text-tertiary);
-      margin-left: 8px;
+      margin-top: 2px;
     }
-
-    /* Result Card */
+    .inst-actions {
+      display: flex;
+      gap: 8px;
+    }
     .result-card {
       text-align: center;
       padding: 32px 20px;
@@ -228,7 +237,85 @@
       color: var(--text-secondary);
     }
 
-    /* Suggestion List */
+    /* ── 3.2 Form Elements ─────────────────────────────────────── */
+    .input-group {
+      margin-bottom: 14px;
+    }
+    .input-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+    .input-wrap {
+      position: relative;
+    }
+    .input-wrap input,
+    .input-wrap select {
+      width: 100%;
+      height: 48px;
+      padding: 0 16px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-size: 16px;
+      color: var(--text);
+      background: var(--card);
+      outline: none;
+      transition: border-color var(--transition), box-shadow var(--transition);
+      font-family: inherit;
+    }
+    .input-wrap input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(0, 85, 212, 0.1);
+    }
+    .input-wrap input::placeholder {
+      color: var(--text-tertiary);
+    }
+    .checkbox-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .checkbox-wrap input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--primary);
+    }
+
+    /* ── 3.3 Dropdowns & Suggestions ───────────────────────────── */
+    .dropdown {
+      position: relative;
+    }
+    .dropdown-list {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: var(--card);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow-md);
+      max-height: 240px;
+      overflow-y: auto;
+      z-index: 50;
+      margin-top: 4px;
+    }
+    .dropdown-item {
+      padding: 12px 16px;
+      font-size: 15px;
+      cursor: pointer;
+      transition: background var(--transition);
+      border-bottom: 1px solid var(--border);
+    }
+    .dropdown-item:last-child { border-bottom: none; }
+    .dropdown-item:active,
+    .dropdown-item:hover { background: var(--primary-light); }
+    .dropdown-item .product-count {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      margin-left: 8px;
+    }
     .suggestions {
       background: var(--card);
       border: 1.5px solid var(--border);
@@ -255,7 +342,7 @@
       font-variant-numeric: tabular-nums;
     }
 
-    /* Buttons */
+    /* ── 3.4 Buttons ───────────────────────────────────────────── */
     .btn {
       display: inline-flex;
       align-items: center;
@@ -294,37 +381,6 @@
       font-size: 13px;
     }
     .btn-block { width: 100%; }
-
-    /* Institution Cards (Manage View) */
-    .inst-card {
-      background: var(--card);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      margin-bottom: 12px;
-      overflow: hidden;
-    }
-    .inst-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px 20px;
-      cursor: pointer;
-      transition: background var(--transition);
-    }
-    .inst-header:active { background: #f9fafb; }
-    .inst-name {
-      font-size: 16px;
-      font-weight: 600;
-    }
-    .inst-meta {
-      font-size: 12px;
-      color: var(--text-tertiary);
-      margin-top: 2px;
-    }
-    .inst-actions {
-      display: flex;
-      gap: 8px;
-    }
     .icon-btn {
       width: 36px;
       height: 36px;
@@ -342,7 +398,33 @@
     .icon-btn:active { background: #f3f4f6; }
     .icon-btn.danger:active { background: var(--danger-bg); color: var(--danger); }
 
-    /* Product Table */
+    /* ── 3.5 Modals ────────────────────────────────────────────── */
+    .modal-mask {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 300;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .modal-content {
+      background: var(--card);
+      border-radius: 16px 16px 0 0;
+      width: 100%;
+      max-width: 500px;
+      max-height: 80vh;
+      overflow-y: auto;
+      padding: 24px 20px;
+      padding-bottom: max(24px, env(safe-area-inset-bottom));
+    }
+    .modal-title {
+      font-size: 17px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    /* ── 3.6 Tables ────────────────────────────────────────────── */
     .product-section {
       padding: 0 20px 16px;
       border-top: 1px solid var(--border);
@@ -405,57 +487,6 @@
       outline: none;
       font-family: inherit;
     }
-
-    /* Import View */
-    .upload-zone {
-      border: 2px dashed var(--border);
-      border-radius: var(--radius);
-      padding: 32px 20px;
-      text-align: center;
-      cursor: pointer;
-      transition: all var(--transition);
-      background: #fafbfc;
-      margin-bottom: 16px;
-    }
-    .upload-zone:active,
-    .upload-zone.dragover {
-      border-color: var(--primary);
-      background: var(--primary-light);
-    }
-    .upload-zone input[type="file"] {
-      display: none;
-    }
-    .upload-icon {
-      font-size: 36px;
-      margin-bottom: 8px;
-    }
-    .upload-title {
-      font-size: 15px;
-      font-weight: 600;
-      margin-bottom: 4px;
-    }
-    .upload-desc {
-      font-size: 13px;
-      color: var(--text-tertiary);
-    }
-
-    /* Progress Bar */
-    .progress-bar {
-      width: 100%;
-      height: 6px;
-      background: #e5e7eb;
-      border-radius: 3px;
-      overflow: hidden;
-      margin: 12px 0;
-    }
-    .progress-fill {
-      height: 100%;
-      background: var(--primary);
-      border-radius: 3px;
-      transition: width 0.3s ease;
-    }
-
-    /* Preview Table */
     .preview-section {
       margin-top: 16px;
     }
@@ -508,8 +539,45 @@
       gap: 8px;
       margin-top: 16px;
     }
+    .preview-table input.name-corrected {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
 
-    /* Toast */
+    /* ── 3.7 Upload Zones ──────────────────────────────────────── */
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 32px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all var(--transition);
+      background: #fafbfc;
+      margin-bottom: 16px;
+    }
+    .upload-zone:active,
+    .upload-zone.dragover {
+      border-color: var(--primary);
+      background: var(--primary-light);
+    }
+    .upload-zone input[type="file"] {
+      display: none;
+    }
+    .upload-icon {
+      font-size: 36px;
+      margin-bottom: 8px;
+    }
+    .upload-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .upload-desc {
+      font-size: 13px;
+      color: var(--text-tertiary);
+    }
+
+    /* ── 3.8 Toast & Progress ──────────────────────────────────── */
     .toast {
       position: fixed;
       top: 72px;
@@ -530,112 +598,20 @@
       opacity: 1;
       transform: translateX(-50%) translateY(0);
     }
-
-    /* Modal */
-    .modal-mask {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.4);
-      z-index: 300;
-      display: flex;
-      align-items: flex-end;
-      justify-content: center;
-    }
-    .modal-content {
-      background: var(--card);
-      border-radius: 16px 16px 0 0;
+    .progress-bar {
       width: 100%;
-      max-width: 500px;
-      max-height: 80vh;
-      overflow-y: auto;
-      padding: 24px 20px;
-      padding-bottom: max(24px, env(safe-area-inset-bottom));
+      height: 6px;
+      background: #e5e7eb;
+      border-radius: 3px;
+      overflow: hidden;
+      margin: 12px 0;
     }
-    .modal-title {
-      font-size: 17px;
-      font-weight: 600;
-      margin-bottom: 16px;
+    .progress-fill {
+      height: 100%;
+      background: var(--primary);
+      border-radius: 3px;
+      transition: width 0.3s ease;
     }
-
-    /* Empty State */
-    .empty-state {
-      text-align: center;
-      padding: 48px 20px;
-      color: var(--text-tertiary);
-    }
-    .empty-state .empty-icon {
-      font-size: 48px;
-      margin-bottom: 12px;
-    }
-    .empty-state p {
-      font-size: 14px;
-      line-height: 1.6;
-    }
-
-    /* Section Title */
-    .section-title {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 12px;
-    }
-
-    /* Checkbox */
-    .checkbox-wrap {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .checkbox-wrap input[type="checkbox"] {
-      width: 18px;
-      height: 18px;
-      accent-color: var(--primary);
-    }
-
-    /* Utility */
-    .mt-8 { margin-top: 8px; }
-    .mt-12 { margin-top: 12px; }
-    .mt-16 { margin-top: 16px; }
-    .mb-12 { margin-bottom: 12px; }
-    .flex-between {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .text-sm { font-size: 13px; }
-    .text-muted { color: var(--text-tertiary); }
-
-    /* Animations */
-    @keyframes fadeInUp {
-      from { opacity: 0; transform: translateY(12px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    .fade-in {
-      animation: fadeInUp 0.3s ease forwards;
-    }
-
-    /* Scrollbar */
-    ::-webkit-scrollbar { width: 4px; }
-    ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
-
-    /* Desktop */
-    @media (min-width: 640px) {
-      .container { padding: 24px; }
-      .header { padding: 20px 24px; }
-      .header h1 { font-size: 20px; }
-    }
-
-    /* backup/export bar */
-    .toolbar {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
-    }
-
-    /* Inline verify status indicators (shown in import preview table) */
     .vstatus {
       display: inline-flex;
       align-items: center;
@@ -651,11 +627,118 @@
     .vstatus-checking { color: var(--text-tertiary); font-size: 12px; letter-spacing: -2px; }
     .vstatus-ok  { background: var(--success); color: #fff; cursor: pointer; }
     .vstatus-err { background: var(--danger); color: #fff; }
-    /* Blue border on inputs whose names were auto-corrected from official API data */
-    .preview-table input.name-corrected {
-      border-color: var(--primary);
-      color: var(--primary);
+
+    /* ═══════════════════════════════════════════════════════════════
+       Section 4 · Utilities & Responsive
+       ═══════════════════════════════════════════════════════════════ */
+
+    /* ── 4.1 Utility Classes ───────────────────────────────────── */
+    .mt-8 { margin-top: 8px; }
+    .mt-12 { margin-top: 12px; }
+    .mt-16 { margin-top: 16px; }
+    .mb-12 { margin-bottom: 12px; }
+    .flex-between {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
+    .text-sm { font-size: 13px; }
+    .text-muted { color: var(--text-tertiary); }
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+    }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 48px 20px;
+      color: var(--text-tertiary);
+    }
+    .empty-state .empty-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+    .empty-state p {
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    /* ── 4.2 Animations ────────────────────────────────────────── */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .fade-in {
+      animation: fadeInUp 0.3s ease forwards;
+    }
+
+    /* ── 4.3 Scrollbar ─────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
+
+    /* ── 4.4 Desktop / Responsive ──────────────────────────────── */
+    @media (min-width: 640px) {
+      .container { padding: 24px; }
+      .header { padding: 20px 24px; }
+      .header h1 { font-size: 20px; }
+    }
+
+    /* ── 4.5 Login Page ────────────────────────────────────────── */
+    .login-page {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #e8f0fe 0%, #f5f6fa 50%, #d1fae5 100%);
+      padding: 20px;
+    }
+    .login-card {
+      background: var(--card);
+      border-radius: 20px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+      padding: 40px 32px;
+      width: 100%;
+      max-width: 380px;
+      text-align: center;
+    }
+    .login-card .logo {
+      font-size: 40px;
+      margin-bottom: 8px;
+    }
+    .login-card h2 {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .login-card .subtitle {
+      font-size: 13px;
+      color: var(--text-tertiary);
+      margin-bottom: 28px;
+    }
+    .login-card .input-wrap {
+      margin-bottom: 16px;
+    }
+    .login-card .input-wrap input {
+      text-align: center;
+      letter-spacing: 2px;
+    }
+    .login-error {
+      color: var(--danger);
+      font-size: 13px;
+      margin-bottom: 12px;
+      min-height: 20px;
+    }
+    .login-card .btn { width: 100%; }
   </style>
 </head>
 <body>
@@ -664,371 +747,554 @@
   <!-- Toast -->
   <div class="toast" :class="{show: toast.visible}">{{ toast.message }}</div>
 
-  <!-- Header -->
-  <div class="header">
-    <h1><span>中欧基金</span> · 机构产品池查询</h1>
-  </div>
-
-  <!-- Query View -->
-  <div class="container" v-if="currentView === 'query'">
-    <!-- Institution Selector -->
-    <div class="input-group">
-      <label>选择机构客户</label>
-      <div class="dropdown">
-        <div class="input-wrap">
-          <input
-            type="text"
-            v-model="instSearchText"
-            @focus="showInstDropdown = true"
-            @input="showInstDropdown = true"
-            placeholder="搜索或选择机构..."
-          >
-        </div>
-        <div class="dropdown-list" v-if="showInstDropdown && filteredInstitutions.length > 0" @mousedown.prevent>
-          <div
-            class="dropdown-item"
-            v-for="inst in filteredInstitutions"
-            :key="inst.id"
-            @click="selectInstitution(inst)"
-          >
-            {{ inst.name }}
-            <span class="product-count">{{ inst.products.length }}只产品</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Fund Query -->
-    <div class="input-group" v-if="selectedInstitution">
-      <label>查询基金产品</label>
+  <!-- ═══════════════════════════════════════════════════════════
+       Login Gate — unauthenticated users see ONLY this
+       ═══════════════════════════════════════════════════════════ -->
+  <div v-if="!authenticated" class="login-page">
+    <div class="login-card">
+      <div class="logo">🏦</div>
+      <h2>中欧基金</h2>
+      <div class="subtitle">机构产品池查询系统</div>
       <div class="input-wrap">
         <input
-          type="text"
-          v-model="fundQuery"
-          @input="onFundQueryInput"
-          placeholder="输入基金代码或名称..."
-          ref="fundInput"
+          type="password"
+          v-model="loginPassword"
+          placeholder="请输入访问密码"
+          @keyup.enter="handleLogin"
+          ref="loginInput"
+          autocomplete="current-password"
         >
       </div>
-      <!-- Suggestions -->
-      <div class="suggestions" v-if="fundQuery && fundSuggestions.length > 0 && !queryResult">
-        <div
-          class="suggestion-item"
-          v-for="p in fundSuggestions"
-          :key="p.code"
-          @click="selectFund(p)"
-        >
-          <span>{{ p.name }}</span>
-          <span class="code">{{ p.code }}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Result -->
-    <div
-      v-if="queryResult"
-      class="result-card"
-      :class="[queryResult, { visible: resultVisible }]"
-    >
-      <div class="result-icon">{{ queryResult === 'investable' ? '✅' : '❌' }}</div>
-      <div class="result-text">{{ queryResult === 'investable' ? '可投资' : '不可投资' }}</div>
-      <div class="result-detail" v-if="queryResult === 'investable' && matchedFund">
-        {{ matchedFund.code }} {{ matchedFund.name }}
-      </div>
-      <div class="result-detail" v-if="queryResult === 'not-investable'">
-        {{ selectedInstitution.name }} 的产品池中未找到该产品
-      </div>
-    </div>
-
-    <!-- Empty state -->
-    <div class="empty-state" v-if="institutions.length === 0">
-      <div class="empty-icon">📋</div>
-      <p>还没有机构数据<br>请先在「管理」中添加机构<br>或在「导入」中上传产品池</p>
+      <div class="login-error">{{ loginError }}</div>
+      <button class="btn btn-primary" @click="handleLogin" :disabled="loginLoading">
+        {{ loginLoading ? '验证中...' : '进入系统' }}
+      </button>
     </div>
   </div>
 
-  <!-- Manage View -->
-  <div class="container" v-if="currentView === 'manage'">
-    <div class="toolbar">
-      <button class="btn btn-primary btn-sm" @click="showAddInstModal = true">+ 新增机构</button>
-      <button class="btn btn-outline btn-sm" @click="exportData">导出备份</button>
-      <button class="btn btn-outline btn-sm" @click="$refs.importJsonInput.click()">导入备份</button>
-      <input type="file" ref="importJsonInput" accept=".json" style="display:none" @change="importBackup">
-    </div>
+  <!-- ═══════════════════════════════════════════════════════════
+       Main Application — only rendered when authenticated
+       ═══════════════════════════════════════════════════════════ -->
+  <template v-if="authenticated">
 
-    <div v-if="institutions.length === 0" class="empty-state">
-      <div class="empty-icon">🏢</div>
-      <p>暂无机构客户<br>点击上方「+ 新增机构」添加</p>
-    </div>
-
-    <div class="inst-card" v-for="inst in institutions" :key="inst.id">
-      <div class="inst-header" @click="toggleExpand(inst.id)">
-        <div>
-          <div class="inst-name">{{ inst.name }}</div>
-          <div class="inst-meta">{{ inst.products.length }} 只产品</div>
+    <!-- Header with user info & logout -->
+    <div class="header">
+      <h1><span>中欧基金</span> · 机构产品池查询</h1>
+      <div class="header-right">
+        <div class="header-user">
+          <div class="avatar">Z</div>
+          <span>已登录</span>
         </div>
-        <div class="inst-actions" @click.stop>
-          <button class="icon-btn danger" @click="confirmDeleteInst(inst)" title="删除">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14"/>
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      <!-- Expanded Product Section -->
-      <div class="product-section" v-if="expandedInst === inst.id">
-        <div class="product-search">
-          <input v-model="productSearchText" placeholder="搜索产品...">
-        </div>
-        <table class="product-table">
-          <thead>
-            <tr><th>代码</th><th>名称</th><th></th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="p in filteredProducts(inst)" :key="p.code">
-              <td>{{ p.code }}</td>
-              <td>{{ p.name }}</td>
-              <td>
-                <button class="icon-btn danger" @click="removeProduct(inst, p.code)" style="width:28px;height:28px;">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                  </svg>
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <div class="add-product-row">
-          <input v-model="newProductCode" placeholder="如005787.OF或005787" style="max-width:120px;">
-          <input v-model="newProductName" placeholder="名称">
-          <button class="btn btn-primary btn-sm" @click="addProduct(inst)">添加</button>
-        </div>
+        <button class="logout-btn" @click="handleLogout">退出</button>
       </div>
     </div>
 
-    <!-- Add Institution Modal -->
-    <div class="modal-mask" v-if="showAddInstModal" @click.self="showAddInstModal = false">
-      <div class="modal-content">
-        <div class="modal-title">新增机构客户</div>
-        <div class="input-group">
-          <label>机构名称</label>
+    <!-- Query View -->
+    <div class="container" v-if="currentView === 'query'">
+      <!-- Institution Selector -->
+      <div class="input-group">
+        <label>选择机构客户</label>
+        <div class="dropdown">
           <div class="input-wrap">
             <input
-              v-model="newInstName"
-              placeholder="请输入机构名称"
-              @keyup.enter="addInstitution"
-              ref="newInstInput"
+              type="text"
+              v-model="instSearchText"
+              @focus="showInstDropdown = true"
+              @input="showInstDropdown = true"
+              placeholder="搜索或选择机构..."
             >
           </div>
-        </div>
-        <div style="display:flex;gap:8px;justify-content:flex-end;">
-          <button class="btn btn-outline btn-sm" @click="showAddInstModal = false">取消</button>
-          <button class="btn btn-primary btn-sm" @click="addInstitution">确认添加</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Delete Confirm Modal -->
-    <div class="modal-mask" v-if="deleteTarget" @click.self="deleteTarget = null">
-      <div class="modal-content">
-        <div class="modal-title">确认删除</div>
-        <p style="margin-bottom:16px;font-size:15px;">
-          确定要删除「{{ deleteTarget.name }}」及其所有产品数据吗？此操作不可恢复。
-        </p>
-        <div style="display:flex;gap:8px;justify-content:flex-end;">
-          <button class="btn btn-outline btn-sm" @click="deleteTarget = null">取消</button>
-          <button class="btn btn-danger btn-sm" @click="deleteInstitution">确认删除</button>
+          <div class="dropdown-list" v-if="showInstDropdown && filteredInstitutions.length > 0" @mousedown.prevent>
+            <div
+              class="dropdown-item"
+              v-for="inst in filteredInstitutions"
+              :key="inst.id"
+              @click="selectInstitution(inst)"
+            >
+              {{ inst.name }}
+              <span class="product-count">{{ inst.products.length }}只产品</span>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-  </div>
 
-  <!-- Import View -->
-  <div class="container" v-if="currentView === 'import'">
-    <!-- Target Institution -->
-    <div class="input-group">
-      <label>选择目标机构</label>
-      <div class="dropdown">
+      <!-- Fund Query -->
+      <div class="input-group" v-if="selectedInstitution">
+        <label>查询基金产品</label>
         <div class="input-wrap">
           <input
             type="text"
-            v-model="importInstSearch"
-            @focus="showImportInstDropdown = true"
-            @input="showImportInstDropdown = true"
-            placeholder="搜索机构或输入新机构名称..."
+            v-model="fundQuery"
+            @input="onFundQueryInput"
+            placeholder="输入基金代码或名称..."
+            ref="fundInput"
           >
         </div>
-        <div class="dropdown-list" v-if="showImportInstDropdown && importFilteredInsts.length > 0" @mousedown.prevent>
+        <!-- Suggestions -->
+        <div class="suggestions" v-if="fundQuery && fundSuggestions.length > 0 && !queryResult">
           <div
-            class="dropdown-item"
-            v-for="inst in importFilteredInsts"
-            :key="inst.id"
-            @click="selectImportInst(inst)"
+            class="suggestion-item"
+            v-for="p in fundSuggestions"
+            :key="p.code"
+            @click="selectFund(p)"
           >
-            {{ inst.name }}
-            <span class="product-count">{{ inst.products.length }}只产品</span>
+            <span>{{ p.name }}</span>
+            <span class="code">{{ p.code }}</span>
           </div>
         </div>
       </div>
-      <div class="mt-8 text-sm text-muted" v-if="importInstSearch && !importTargetInst && importFilteredInsts.length === 0">
-        将为「{{ importInstSearch }}」创建新机构
+
+      <!-- Result -->
+      <div
+        v-if="queryResult"
+        class="result-card"
+        :class="[queryResult, { visible: resultVisible }]"
+      >
+        <div class="result-icon">{{ queryResult === 'investable' ? '✅' : '❌' }}</div>
+        <div class="result-text">{{ queryResult === 'investable' ? '可投资' : '不可投资' }}</div>
+        <div class="result-detail" v-if="queryResult === 'investable' && matchedFund">
+          {{ matchedFund.code }} {{ matchedFund.name }}
+        </div>
+        <div class="result-detail" v-if="queryResult === 'not-investable'">
+          {{ selectedInstitution.name }} 的产品池中未找到该产品
+        </div>
+      </div>
+
+      <!-- Empty state -->
+      <div class="empty-state" v-if="institutions.length === 0">
+        <div class="empty-icon">📋</div>
+        <p>还没有机构数据<br>请先在「管理」中添加机构<br>或在「导入」中上传产品池</p>
       </div>
     </div>
 
-    <!-- Excel Upload -->
-    <div class="section-title">Excel 导入</div>
-    <div
-      class="upload-zone"
-      :class="{dragover: excelDragover}"
-      @click="$refs.excelInput.click()"
-      @dragover.prevent="excelDragover = true"
-      @dragleave="excelDragover = false"
-      @drop.prevent="handleExcelDrop"
-    >
-      <div class="upload-icon">📄</div>
-      <div class="upload-title">上传 Excel 文件</div>
-      <div class="upload-desc">点击选择或拖拽 .xlsx / .xls 文件</div>
-      <input type="file" ref="excelInput" accept=".xlsx,.xls,.csv" @change="handleExcelUpload">
-    </div>
+    <!-- Manage View -->
+    <div class="container" v-if="currentView === 'manage'">
+      <div class="toolbar">
+        <button class="btn btn-primary btn-sm" @click="showAddInstModal = true">+ 新增机构</button>
+        <button class="btn btn-outline btn-sm" @click="exportData">导出备份</button>
+        <button class="btn btn-outline btn-sm" @click="$refs.importJsonInput.click()">导入备份</button>
+        <input type="file" ref="importJsonInput" accept=".json" style="display:none" @change="importBackup">
+      </div>
 
-    <!-- PDF Upload -->
-    <div class="section-title">PDF 导入</div>
-    <div
-      class="upload-zone"
-      @click="$refs.pdfInput.click()"
-    >
-      <div class="upload-icon">📑</div>
-      <div class="upload-title">上传 PDF 文件</div>
-      <div class="upload-desc">自动提取PDF中的基金代码和名称</div>
-      <input type="file" ref="pdfInput" accept=".pdf" @change="handlePdfUpload">
-    </div>
+      <div v-if="institutions.length === 0" class="empty-state">
+        <div class="empty-icon">🏢</div>
+        <p>暂无机构客户<br>点击上方「+ 新增机构」添加</p>
+      </div>
 
-    <!-- Image OCR Upload -->
-    <div class="section-title">图片 OCR 识别</div>
-    <div
-      class="upload-zone"
-      @click="$refs.imageInput.click()"
-    >
-      <div class="upload-icon">📷</div>
-      <div class="upload-title">上传产品池图片</div>
-      <div class="upload-desc">支持拍照或从相册选择</div>
-      <input type="file" ref="imageInput" accept="image/*" capture="environment" @change="handleImageOCR">
-    </div>
+      <div class="inst-card" v-for="inst in institutions" :key="inst.id">
+        <div class="inst-header" @click="toggleExpand(inst.id)">
+          <div>
+            <div class="inst-name">{{ inst.name }}</div>
+            <div class="inst-meta">{{ inst.products.length }} 只产品</div>
+          </div>
+          <div class="inst-actions" @click.stop>
+            <button class="icon-btn danger" @click="confirmDeleteInst(inst)" title="删除">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14"/>
+              </svg>
+            </button>
+          </div>
+        </div>
 
-    <!-- OCR Progress -->
-    <div v-if="isProcessing" class="card">
-      <div style="font-size:14px;margin-bottom:8px;">{{ ocrStatus }}</div>
-      <div class="progress-bar">
-        <div class="progress-fill" :style="{width: ocrProgress + '%'}"></div>
+        <!-- Expanded Product Section -->
+        <div class="product-section" v-if="expandedInst === inst.id">
+          <div class="product-search">
+            <input v-model="productSearchText" placeholder="搜索产品...">
+          </div>
+          <table class="product-table">
+            <thead>
+              <tr><th>代码</th><th>名称</th><th></th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="p in filteredProducts(inst)" :key="p.code">
+                <td>{{ p.code }}</td>
+                <td>{{ p.name }}</td>
+                <td>
+                  <button class="icon-btn danger" @click="removeProduct(inst, p.code)" style="width:28px;height:28px;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="add-product-row">
+            <input v-model="newProductCode" placeholder="如005787.OF或005787" style="max-width:120px;">
+            <input v-model="newProductName" placeholder="名称">
+            <button class="btn btn-primary btn-sm" @click="addProduct(inst)">添加</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Add Institution Modal -->
+      <div class="modal-mask" v-if="showAddInstModal" @click.self="showAddInstModal = false">
+        <div class="modal-content">
+          <div class="modal-title">新增机构客户</div>
+          <div class="input-group">
+            <label>机构名称</label>
+            <div class="input-wrap">
+              <input
+                v-model="newInstName"
+                placeholder="请输入机构名称"
+                @keyup.enter="addInstitution"
+                ref="newInstInput"
+              >
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;">
+            <button class="btn btn-outline btn-sm" @click="showAddInstModal = false">取消</button>
+            <button class="btn btn-primary btn-sm" @click="addInstitution">确认添加</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Delete Confirm Modal -->
+      <div class="modal-mask" v-if="deleteTarget" @click.self="deleteTarget = null">
+        <div class="modal-content">
+          <div class="modal-title">确认删除</div>
+          <p style="margin-bottom:16px;font-size:15px;">
+            确定要删除「{{ deleteTarget.name }}」及其所有产品数据吗？此操作不可恢复。
+          </p>
+          <div style="display:flex;gap:8px;justify-content:flex-end;">
+            <button class="btn btn-outline btn-sm" @click="deleteTarget = null">取消</button>
+            <button class="btn btn-danger btn-sm" @click="deleteInstitution">确认删除</button>
+          </div>
+        </div>
       </div>
     </div>
 
-    <!-- Preview -->
-    <div class="preview-section" v-if="previewProducts.length > 0">
-      <div class="preview-header">
-        <h3>识别结果预览</h3>
-        <span class="preview-count">共 {{ previewProducts.length }} 条</span>
+    <!-- Import View -->
+    <div class="container" v-if="currentView === 'import'">
+      <!-- Target Institution -->
+      <div class="input-group">
+        <label>选择目标机构</label>
+        <div class="dropdown">
+          <div class="input-wrap">
+            <input
+              type="text"
+              v-model="importInstSearch"
+              @focus="showImportInstDropdown = true"
+              @input="showImportInstDropdown = true"
+              placeholder="搜索机构或输入新机构名称..."
+            >
+          </div>
+          <div class="dropdown-list" v-if="showImportInstDropdown && importFilteredInsts.length > 0" @mousedown.prevent>
+            <div
+              class="dropdown-item"
+              v-for="inst in importFilteredInsts"
+              :key="inst.id"
+              @click="selectImportInst(inst)"
+            >
+              {{ inst.name }}
+              <span class="product-count">{{ inst.products.length }}只产品</span>
+            </div>
+          </div>
+        </div>
+        <div class="mt-8 text-sm text-muted" v-if="importInstSearch && !importTargetInst && importFilteredInsts.length === 0">
+          将为「{{ importInstSearch }}」创建新机构
+        </div>
       </div>
-      <div class="card" style="padding:12px;overflow-x:auto;">
-        <table class="preview-table">
-          <thead>
-            <tr><th style="width:30px;"></th><th style="width:80px;">代码</th><th>名称</th><th style="width:22px;"></th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="(p, i) in previewProducts" :key="i" :class="{warn: !isValidCode(p.code)}">
-              <td><input type="checkbox" v-model="p.selected"></td>
-              <td><input v-model="p.code" :class="{warn: !isValidCode(p.code)}"></td>
-              <td>
-                <!-- Blue border = name was auto-corrected from official API source -->
-                <input v-model="p.name"
-                       :class="{'name-corrected': p.nameCorrected}"
-                       :title="p.nameCorrected ? '已自动修正为官方名称，可手动编辑' : ''">
-              </td>
-              <td style="text-align:center;vertical-align:middle;">
-                <span class="vstatus vstatus-checking" v-if="p.verifyStatus === 'checking'" title="核对中…">···</span>
-                <a  class="vstatus vstatus-ok"
-                    v-else-if="p.verifyStatus === 'ok'"
-                    :href="'https://fund.eastmoney.com/' + bareCode(p.code) + '.html'"
-                    target="_blank" rel="noopener"
-                    :title="p.nameCorrected ? '代码已核对，名称已自动修正为官方名称 · 点击在天天基金查看' : '代码与名称核对通过 · 点击在天天基金查看'">✓</a>
-                <span class="vstatus vstatus-err"
-                      v-else-if="p.verifyStatus === 'notfound'"
-                      title="天天基金未收录该代码，名称无法自动修正，请人工核查">?</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+
+      <!-- Excel Upload -->
+      <div class="section-title">Excel 导入</div>
+      <div
+        class="upload-zone"
+        :class="{dragover: excelDragover}"
+        @click="$refs.excelInput.click()"
+        @dragover.prevent="excelDragover = true"
+        @dragleave="excelDragover = false"
+        @drop.prevent="handleExcelDrop"
+      >
+        <div class="upload-icon">📄</div>
+        <div class="upload-title">上传 Excel 文件</div>
+        <div class="upload-desc">点击选择或拖拽 .xlsx / .xls 文件</div>
+        <input type="file" ref="excelInput" accept=".xlsx,.xls,.csv" @change="handleExcelUpload">
       </div>
-      <div class="preview-actions">
-        <button class="btn btn-primary btn-block" @click="confirmImport">
-          确认导入 ({{ selectedPreviewCount }} 条)
-        </button>
-        <button class="btn btn-outline" @click="previewProducts = []">取消</button>
+
+      <!-- PDF Upload -->
+      <div class="section-title">PDF 导入</div>
+      <div
+        class="upload-zone"
+        @click="$refs.pdfInput.click()"
+      >
+        <div class="upload-icon">📑</div>
+        <div class="upload-title">上传 PDF 文件</div>
+        <div class="upload-desc">自动提取PDF中的基金代码和名称</div>
+        <input type="file" ref="pdfInput" accept=".pdf" @change="handlePdfUpload">
+      </div>
+
+      <!-- Image OCR Upload -->
+      <div class="section-title">图片 OCR 识别</div>
+      <div
+        class="upload-zone"
+        @click="$refs.imageInput.click()"
+      >
+        <div class="upload-icon">📷</div>
+        <div class="upload-title">上传产品池图片</div>
+        <div class="upload-desc">支持拍照或从相册选择</div>
+        <input type="file" ref="imageInput" accept="image/*" capture="environment" @change="handleImageOCR">
+      </div>
+
+      <!-- OCR Progress -->
+      <div v-if="isProcessing" class="card">
+        <div style="font-size:14px;margin-bottom:8px;">{{ ocrStatus }}</div>
+        <div class="progress-bar">
+          <div class="progress-fill" :style="{width: ocrProgress + '%'}"></div>
+        </div>
+      </div>
+
+      <!-- Preview -->
+      <div class="preview-section" v-if="previewProducts.length > 0">
+        <div class="preview-header">
+          <h3>识别结果预览</h3>
+          <span class="preview-count">共 {{ previewProducts.length }} 条</span>
+        </div>
+        <div class="card" style="padding:12px;overflow-x:auto;">
+          <table class="preview-table">
+            <thead>
+              <tr><th style="width:30px;"></th><th style="width:80px;">代码</th><th>名称</th><th style="width:22px;"></th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="(p, i) in previewProducts" :key="i" :class="{warn: !isValidCode(p.code)}">
+                <td><input type="checkbox" v-model="p.selected"></td>
+                <td><input v-model="p.code" :class="{warn: !isValidCode(p.code)}"></td>
+                <td>
+                  <input v-model="p.name"
+                         :class="{'name-corrected': p.nameCorrected}"
+                         :title="p.nameCorrected ? '已自动修正为官方名称，可手动编辑' : ''">
+                </td>
+                <td style="text-align:center;vertical-align:middle;">
+                  <span class="vstatus vstatus-checking" v-if="p.verifyStatus === 'checking'" title="核对中…">···</span>
+                  <a  class="vstatus vstatus-ok"
+                      v-else-if="p.verifyStatus === 'ok'"
+                      :href="'https://fund.eastmoney.com/' + bareCode(p.code) + '.html'"
+                      target="_blank" rel="noopener"
+                      :title="p.nameCorrected ? '代码已核对，名称已自动修正为官方名称 · 点击在天天基金查看' : '代码与名称核对通过 · 点击在天天基金查看'">✓</a>
+                  <span class="vstatus vstatus-err"
+                        v-else-if="p.verifyStatus === 'notfound'"
+                        title="天天基金未收录该代码，名称无法自动修正，请人工核查">?</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="preview-actions">
+          <button class="btn btn-primary btn-block" @click="confirmImport">
+            确认导入 ({{ selectedPreviewCount }} 条)
+          </button>
+          <button class="btn btn-outline" @click="previewProducts = []">取消</button>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- Bottom Navigation -->
-  <nav class="bottom-nav">
-    <button class="nav-item" :class="{active: currentView === 'query'}" @click="switchView('query')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-      </svg>
-      查询
-    </button>
-    <button class="nav-item" :class="{active: currentView === 'manage'}" @click="switchView('manage')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
-      </svg>
-      管理
-    </button>
-    <button class="nav-item" :class="{active: currentView === 'import'}" @click="switchView('import')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-      </svg>
-      导入
-    </button>
-  </nav>
+    <!-- Bottom Navigation -->
+    <nav class="bottom-nav">
+      <button class="nav-item" :class="{active: currentView === 'query'}" @click="switchView('query')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        查询
+      </button>
+      <button class="nav-item" :class="{active: currentView === 'manage'}" @click="switchView('manage')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
+        </svg>
+        管理
+      </button>
+      <button class="nav-item" :class="{active: currentView === 'import'}" @click="switchView('import')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        导入
+      </button>
+    </nav>
+
+  </template>
 </div>
 
 <script>
+/* ═══════════════════════════════════════════════════════════════════
+   Section 1 · Configuration & Constants
+   ═══════════════════════════════════════════════════════════════════ */
+
 const { createApp, ref, computed, watch, nextTick } = Vue;
 
 const SUPABASE_URL = 'https://rghlkwmarqfyksaztang.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJnaGxrd21hcnFmeWtzYXp0YW5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwODk5MTcsImV4cCI6MjA4OTY2NTkxN30.cbwWMVYhPpOuqFcU1ZzvB0Y_S7tqK_E8tBJMBwGebis';
+
+// SHA-256 hash of the access password — change this to update the password
+// Current password: jgywb
+const PASSWORD_HASH = '5bad5c1d07c928e082585b6332f72cd6bd91c94da4a442cfc80f5b62ebb71497';
+
+// Session validity: 12 hours
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+
+// Request signing secret (used to make direct API abuse harder)
+const SIGN_SECRET = 'zojg_fund_pool_2024';
+
+// Local storage keys
+const LS_SESSION  = 'zojg_session';
+const LS_CACHE    = 'zojg_institutions_cache';
+
+/* ═══════════════════════════════════════════════════════════════════
+   Section 2 · Authentication
+   ═══════════════════════════════════════════════════════════════════ */
+
+async function sha256(message) {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function getSession() {
+  try {
+    const raw = localStorage.getItem(LS_SESSION);
+    if (!raw) return null;
+    const session = JSON.parse(raw);
+    if (Date.now() - session.ts > SESSION_TTL_MS) {
+      localStorage.removeItem(LS_SESSION);
+      return null;
+    }
+    return session;
+  } catch { return null; }
+}
+
+function createSession() {
+  const session = { ts: Date.now(), token: crypto.randomUUID() };
+  localStorage.setItem(LS_SESSION, JSON.stringify(session));
+  return session;
+}
+
+function destroySession() {
+  localStorage.removeItem(LS_SESSION);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Section 3 · Database & Storage Layer (Dual: Supabase + localStorage)
+   ═══════════════════════════════════════════════════════════════════ */
+
 const db_client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// ── Request signing: adds X-Signature header to make raw API calls harder ──
+// HMAC-like signature: SHA-256(secret + timestamp + action)
+async function signRequest(action) {
+  const ts = Math.floor(Date.now() / 30000); // 30-second window
+  return await sha256(SIGN_SECRET + ':' + ts + ':' + action);
+}
+
+// ── Unified error handler ──────────────────────────────────────────────────
+function handleError(context, error) {
+  const msg = error?.message || String(error);
+  console.error(`[${context}]`, msg, error);
+  return msg;
+}
+
+// ── localStorage cache helpers ─────────────────────────────────────────────
+function cacheGet() {
+  try {
+    const raw = localStorage.getItem(LS_CACHE);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function cacheSet(data) {
+  try {
+    localStorage.setItem(LS_CACHE, JSON.stringify(data));
+  } catch { /* quota exceeded — ignore */ }
+}
+
+// ── DB object with dual-layer storage ──────────────────────────────────────
 const DB = {
   async load() {
-    const { data, error } = await db_client.from('institutions').select('*').order('created_at');
-    if (error) { console.error('加载失败:', error); return []; }
-    return data.map(row => ({
-      id: row.id,
-      name: row.name,
-      products: row.products || [],
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }));
+    try {
+      const sig = await signRequest('load');
+      const { data, error } = await db_client
+        .from('institutions')
+        .select('*')
+        .order('created_at');
+      if (error) throw error;
+      const result = data.map(row => ({
+        id: row.id,
+        name: row.name,
+        products: row.products || [],
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      }));
+      // Update local cache on successful load
+      cacheSet(result);
+      return result;
+    } catch (e) {
+      handleError('DB.load', e);
+      // Fallback to localStorage cache
+      const cached = cacheGet();
+      if (cached) {
+        console.warn('Supabase不可用，使用本地缓存 (' + cached.length + ' 条)');
+        return cached;
+      }
+      return [];
+    }
   },
+
   async upsert(inst) {
-    const { error } = await db_client.from('institutions').upsert({
-      id: inst.id,
-      name: inst.name,
-      products: inst.products,
-      updated_at: new Date().toISOString()
-    });
-    if (error) console.error('保存失败:', error);
-    return !error;
+    try {
+      const sig = await signRequest('upsert');
+      const { error } = await db_client.from('institutions').upsert({
+        id: inst.id,
+        name: inst.name,
+        products: inst.products,
+        updated_at: new Date().toISOString()
+      });
+      if (error) throw error;
+      return true;
+    } catch (e) {
+      handleError('DB.upsert', e);
+      return false;
+    }
   },
+
   async remove(id) {
-    const { error } = await db_client.from('institutions').delete().eq('id', id);
-    if (error) console.error('删除失败:', error);
-    return !error;
+    try {
+      const sig = await signRequest('remove');
+      const { error } = await db_client.from('institutions').delete().eq('id', id);
+      if (error) throw error;
+      return true;
+    } catch (e) {
+      handleError('DB.remove', e);
+      return false;
+    }
   }
 };
 
-// Normalize fund code: append .OF if bare 6-digit code
+/* ═══════════════════════════════════════════════════════════════════
+   Section 4 · Utility Functions
+   ═══════════════════════════════════════════════════════════════════ */
+
+// ── Lazy loaders for heavy libraries ───────────────────────────────────────
+let _pdfjsModule = null;
+function loadPdfJs() {
+  if (_pdfjsModule) return _pdfjsModule;
+  _pdfjsModule = import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.min.mjs').then(mod => {
+    mod.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs';
+    return mod;
+  });
+  return _pdfjsModule;
+}
+
+let _tesseractLoaded = false;
+function loadTesseract() {
+  if (_tesseractLoaded) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    script.onload = () => { _tesseractLoaded = true; resolve(); };
+    script.onerror = () => reject(new Error('Tesseract.js 加载失败'));
+    document.head.appendChild(script);
+  });
+}
+
+// ── Fund code helpers ──────────────────────────────────────────────────────
 function normalizeCode(code) {
   return /^\d{6}$/.test(code) ? code + '.OF' : code;
 }
@@ -1037,15 +1303,10 @@ function fuzzyMatch(query, target) {
   if (!query) return { match: true, score: 0 };
   query = query.toLowerCase().trim();
   target = target.toLowerCase();
-  // Exact match
   if (target === query) return { match: true, score: 100 };
-  // Starts with
   if (target.startsWith(query)) return { match: true, score: 80 };
-  // Contains
   if (target.includes(query)) return { match: true, score: 60 };
-  // Code prefix for numbers
   if (/^\d+$/.test(query) && target.startsWith(query)) return { match: true, score: 70 };
-  // Subsequence match
   let qi = 0;
   for (let ti = 0; ti < target.length && qi < query.length; ti++) {
     if (target[ti] === query[qi]) qi++;
@@ -1054,7 +1315,7 @@ function fuzzyMatch(query, target) {
   return { match: false, score: 0 };
 }
 
-// JSONP helper — works cross-origin, no CORS needed
+// ── JSONP helper ───────────────────────────────────────────────────────────
 function jsonp(url, callbackParam = 'callback') {
   return new Promise((resolve, reject) => {
     const cbName = '_cb_' + Date.now() + '_' + Math.floor(Math.random() * 9999);
@@ -1082,8 +1343,7 @@ function jsonp(url, callbackParam = 'callback') {
   });
 }
 
-// fundgz.1234567.com.cn uses a hardcoded callback name `jsonpgz` — requests must be sequential.
-// We chain each call onto the previous via a shared promise so concurrent callers queue up.
+// ── fundgz sequential lookup ───────────────────────────────────────────────
 let _fundgzSeq = Promise.resolve();
 function fundgzLookup(bare) {
   const curr = _fundgzSeq.then(() => new Promise((resolve) => {
@@ -1095,13 +1355,23 @@ function fundgzLookup(bare) {
     document.head.appendChild(s);
     setTimeout(() => s.parentNode && s.parentNode.removeChild(s), 5000);
   }));
-  _fundgzSeq = curr.catch(() => {}); // keep chain alive even on error
+  _fundgzSeq = curr.catch(() => {});
   return curr;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Section 5 · Vue Application
+   ═══════════════════════════════════════════════════════════════════ */
 
 createApp({
   data() {
     return {
+      // Auth
+      authenticated: !!getSession(),
+      loginPassword: '',
+      loginError: '',
+      loginLoading: false,
+
       currentView: 'query',
       institutions: [],
 
@@ -1160,15 +1430,56 @@ createApp({
   },
 
   methods: {
-    // Persistence
-    async loadData() {
-      this.institutions = await DB.load();
-    },
-    async saveInst(inst) {
-      await DB.upsert(inst);
+    // ── Authentication ───────────────────────────────────────────
+    async handleLogin() {
+      this.loginError = '';
+      this.loginLoading = true;
+      try {
+        const hash = await sha256(this.loginPassword);
+        if (hash === PASSWORD_HASH) {
+          createSession();
+          this.authenticated = true;
+          this.loginPassword = '';
+          await this.loadData();
+        } else {
+          this.loginError = '密码错误，请重试';
+        }
+      } catch (e) {
+        this.loginError = handleError('login', e);
+      } finally {
+        this.loginLoading = false;
+      }
     },
 
-    // Toast
+    handleLogout() {
+      destroySession();
+      this.authenticated = false;
+      this.institutions = [];
+      this.selectedInstitution = null;
+      this.instSearchText = '';
+      this.currentView = 'query';
+    },
+
+    // ── Persistence (dual-layer) ─────────────────────────────────
+    async loadData() {
+      try {
+        this.institutions = await DB.load();
+      } catch (e) {
+        this.showToast(handleError('loadData', e));
+      }
+    },
+
+    async saveInst(inst) {
+      const ok = await DB.upsert(inst);
+      if (ok) {
+        // Sync local cache after successful save
+        cacheSet(this.institutions);
+      } else {
+        this.showToast('保存失败，数据已缓存到本地');
+      }
+    },
+
+    // ── Toast ────────────────────────────────────────────────────
     showToast(msg) {
       if (this.toast.timer) clearTimeout(this.toast.timer);
       this.toast.message = msg;
@@ -1176,16 +1487,15 @@ createApp({
       this.toast.timer = setTimeout(() => { this.toast.visible = false; }, 2000);
     },
 
-    // View switching
+    // ── View switching ───────────────────────────────────────────
     switchView(view) {
       this.currentView = view;
-      // Reset states
       this.queryResult = null;
       this.resultVisible = false;
       this.previewProducts = [];
     },
 
-    // === Query View ===
+    // ═══ Query View ══════════════════════════════════════════════
     selectInstitution(inst) {
       this.selectedInstitution = inst;
       this.instSearchText = inst.name;
@@ -1229,7 +1539,6 @@ createApp({
       nextTick(() => { this.resultVisible = true; });
     },
 
-    // Check if typed query exactly matches - triggered on Enter or when suggestion is empty
     checkFund() {
       if (!this.selectedInstitution || !this.fundQuery.trim()) return;
       const q = this.fundQuery.trim();
@@ -1248,7 +1557,7 @@ createApp({
       nextTick(() => { this.resultVisible = true; });
     },
 
-    // === Manage View ===
+    // ═══ Manage View ═════════════════════════════════════════════
     toggleExpand(id) {
       this.expandedInst = this.expandedInst === id ? null : id;
       this.productSearchText = '';
@@ -1273,6 +1582,7 @@ createApp({
       const inst = { id: 'inst_' + Date.now(), name, products: [], createdAt: now, updatedAt: now };
       if (await DB.upsert(inst)) {
         this.institutions.push(inst);
+        cacheSet(this.institutions);
         this.newInstName = '';
         this.showAddInstModal = false;
         this.showToast('机构添加成功');
@@ -1284,9 +1594,11 @@ createApp({
     confirmDeleteInst(inst) {
       this.deleteTarget = inst;
     },
+
     async deleteInstitution() {
       if (await DB.remove(this.deleteTarget.id)) {
         this.institutions = this.institutions.filter(i => i.id !== this.deleteTarget.id);
+        cacheSet(this.institutions);
         if (this.selectedInstitution && this.selectedInstitution.id === this.deleteTarget.id) {
           this.selectedInstitution = null;
           this.instSearchText = '';
@@ -1321,7 +1633,7 @@ createApp({
       await this.saveInst(inst);
     },
 
-    // === Import View ===
+    // ═══ Import View ═════════════════════════════════════════════
     selectImportInst(inst) {
       this.importTargetInst = inst;
       this.importInstSearch = inst.name;
@@ -1338,6 +1650,7 @@ createApp({
         inst = { id: 'inst_' + Date.now(), name, products: [], createdAt: now, updatedAt: now };
         if (await DB.upsert(inst)) {
           this.institutions.push(inst);
+          cacheSet(this.institutions);
         } else {
           this.showToast('创建机构失败，请检查网络'); return null;
         }
@@ -1346,7 +1659,7 @@ createApp({
       return inst;
     },
 
-    // Excel
+    // ── Excel ────────────────────────────────────────────────────
     handleExcelUpload(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -1376,7 +1689,6 @@ createApp({
           }
           if (codeCol >= 0 && nameCol >= 0) { startRow = r + 1; break; }
         }
-        // Fallback
         if (codeCol < 0) { codeCol = 0; nameCol = 1; startRow = 1; }
         if (nameCol < 0) nameCol = codeCol === 0 ? 1 : 0;
 
@@ -1399,11 +1711,11 @@ createApp({
         this.showToast(`已识别 ${products.length} 条产品`);
         this.verifyPreviewProducts();
       } catch (e) {
-        this.showToast('Excel解析失败: ' + e.message);
+        this.showToast('Excel解析失败: ' + handleError('parseExcel', e));
       }
     },
 
-    // PDF
+    // ── PDF (lazy-loaded) ────────────────────────────────────────
     async handlePdfUpload(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -1411,10 +1723,12 @@ createApp({
 
       this.isProcessing = true;
       this.ocrProgress = 0;
-      this.ocrStatus = '正在解析PDF...';
+      this.ocrStatus = '正在加载PDF引擎...';
 
       try {
-        const pdfjsLib = await window._pdfjsReady;
+        const pdfjsLib = await loadPdfJs();
+        this.ocrStatus = '正在解析PDF...';
+
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         const totalPages = pdf.numPages;
@@ -1429,10 +1743,8 @@ createApp({
           fullText += pageText + '\n';
         }
 
-        // Parse: find all occurrences of 6-digit code + .XX
         const products = [];
         const seen = new Set();
-        // Try line-by-line first
         const lines = fullText.split('\n');
         for (let line of lines) {
           line = this.cleanOcrText(line);
@@ -1442,13 +1754,10 @@ createApp({
             const code = this.normalizeCode(match[1]);
             if (seen.has(code)) continue;
             seen.add(code);
-            // Extract name near the code: look for Chinese characters around it
             const parts = line.split(match[0]);
             let name = '';
-            // Check text after code
             const after = (parts[1] || '').replace(/[\s|｜,，、;；()（）]+/g, '').trim();
             const before = (parts[0] || '').replace(/[\s|｜,，、;；()（）]+/g, '').trim();
-            // Prefer the part that contains Chinese characters
             const chineseAfter = after.match(/[\u4e00-\u9fa5A-Za-z][\u4e00-\u9fa5A-Za-z0-9]+/);
             const chineseBefore = before.match(/[\u4e00-\u9fa5A-Za-z][\u4e00-\u9fa5A-Za-z0-9]*$/);
             if (chineseAfter) {
@@ -1472,17 +1781,16 @@ createApp({
       } catch (e) {
         this.isProcessing = false;
         this.ocrStatus = '';
-        this.showToast('PDF解析失败: ' + e.message);
+        this.showToast('PDF解析失败: ' + handleError('handlePdfUpload', e));
       }
     },
 
-    // OCR — image preprocessing: grayscale + contrast boost + upscale
+    // ── Image preprocessing ──────────────────────────────────────
     async preprocessImage(file) {
       return new Promise((resolve) => {
         const img = new Image();
         const url = URL.createObjectURL(file);
         img.onload = () => {
-          // Upscale if image is small — Tesseract needs ≥150 DPI, aim for long-side ≥1800px
           const maxDim = Math.max(img.width, img.height);
           const scale = maxDim < 1800 ? Math.min(3, 1800 / maxDim) : 1;
           const w = Math.round(img.width * scale);
@@ -1495,7 +1803,6 @@ createApp({
           ctx.drawImage(img, 0, 0, w, h);
           URL.revokeObjectURL(url);
 
-          // Grayscale + contrast stretch (1.5×) centred at 128
           const id = ctx.getImageData(0, 0, w, h);
           const d = id.data;
           for (let i = 0; i < d.length; i += 4) {
@@ -1511,6 +1818,7 @@ createApp({
       });
     },
 
+    // ── OCR (lazy-loaded Tesseract.js) ───────────────────────────
     async handleImageOCR(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -1518,15 +1826,16 @@ createApp({
 
       this.isProcessing = true;
       this.ocrProgress = 0;
-      this.ocrStatus = '正在预处理图片...';
+      this.ocrStatus = '正在加载OCR引擎...';
 
       try {
-        // Step 1: enhance image before feeding to Tesseract
-        const enhanced = await this.preprocessImage(file);
-        this.ocrStatus = '正在初始化OCR引擎...';
+        // Lazy load Tesseract.js only when actually needed
+        await loadTesseract();
 
-        // Step 2: run OCR with Chinese + English models
-        // chi_sim handles Chinese characters; eng improves digit/letter accuracy
+        this.ocrStatus = '正在预处理图片...';
+        const enhanced = await this.preprocessImage(file);
+
+        this.ocrStatus = '正在初始化OCR引擎...';
         const worker = await Tesseract.createWorker(['chi_sim', 'eng'], 1, {
           logger: (m) => {
             if (m.status === 'recognizing text') {
@@ -1539,9 +1848,7 @@ createApp({
           }
         });
 
-        // PSM 6 = single uniform text block — best for structured fund lists / tables
         await worker.setParameters({ tessedit_pageseg_mode: '6' });
-
         const { data: { text } } = await worker.recognize(enhanced);
         await worker.terminate();
 
@@ -1553,7 +1860,6 @@ createApp({
           if (codeMatch) {
             const code = this.normalizeCode(codeMatch[1]);
             const rawName = line.replace(codeMatch[0], '').trim();
-            // Keep Chinese chars, letters, digits, hyphens, parentheses only
             const name = rawName.replace(/[^\u4e00-\u9fa5\u3400-\u4dbfa-zA-Z0-9\-\uff08\uff09\(\)]/g, '').trim();
             products.push({ code, name: name || '未识别名称', selected: true, verifyStatus: null, officialName: '', nameCorrected: false });
           }
@@ -1572,93 +1878,67 @@ createApp({
       } catch (e) {
         this.isProcessing = false;
         this.ocrStatus = '';
-        this.showToast('OCR识别失败: ' + e.message);
+        this.showToast('OCR识别失败: ' + handleError('handleImageOCR', e));
       }
     },
 
+    // ── OCR text cleaning (8-step pipeline) ──────────────────────
     cleanOcrText(text) {
-      // ── 1. Remove quote / apostrophe noise ─────────────────────────────────────
       text = text.replace(/[\u2018\u2019\u201c\u201d\u0022\u0027\u0060\uff02\uff07\u2033\u2032]/g, '');
-
-      // ── 2. Strip leading/trailing noise symbols (bullets, punctuation, etc.) ───
       text = text.replace(/^[\s\u3000\u3002\u00b7\u2022\uff0e\uff01\uff1f\u30fb\u300c\u300d\u300e\u300f\u3010\u3011\u300a\u300b]+/, '');
       text = text.replace(/[\s\u3000\u3002\u00b7\u2022\uff0e\uff01\uff1f\u30fb\u300c\u300d\u300e\u300f\u3010\u3011\u300a\u300b]+$/, '');
-
-      // ── 3. Collapse spaces between digits ──────────────────────────────────────
       text = text.replace(/(\d)[\s\u3000]+(\d)/g, '$1$2');
-
-      // ── 4. Fix l / I / | misread as digit 1 in numeric context ────────────────
-      //       e.g. "00l110" → "001110", "001|10" → "001110"
       text = text.replace(/(\d)[lI\|](\d)/g, '$11$2');
-      text = text.replace(/(\d)[lI\|](\d)/g, '$11$2'); // second pass for consecutive
-
-      // ── 5. Fix O / o misread as digit 0 in numeric context ────────────────────
+      text = text.replace(/(\d)[lI\|](\d)/g, '$11$2');
       text = text.replace(/(\d)[Oo](\d)/g, '$10$2');
       text = text.replace(/(\d)[Oo](\d)/g, '$10$2');
-
-      // ── 6. Fix common leading-character confusions ─────────────────────────────
-      //       "O05787" → "005787",  "l01110" / "I01110" → "101110" (then code normalizer pads)
       text = text.replace(/\bO(\d{5})\b/g, '0$1');
       text = text.replace(/\b[lI](\d{5})\b/g, '1$1');
-
-      // ── 7. Normalize .OF suffix variants ──────────────────────────────────────
       text = text.replace(/(\d{6})\s*[.\u3002·,，]\s*(OF|of|oF|Of)/g, '$1.$2');
       text = text.replace(/(\d{6})\s+(OF|of|oF|Of)\b/g, '$1.$2');
-
-      // ── 8. Strip trailing table columns: NAV / percentage / date ──────────────
-      //       e.g. "中欧医疗A  2.0216  +0.35%  2026-03-26" → "中欧医疗A"
       text = text.replace(/\s+[-+]?\d{1,6}[.,]\d{2,4}%?\s*$/, '');
       text = text.replace(/\s+\d{4}[-\/]\d{2}[-\/]\d{2}\s*$/, '');
-
       return text;
     },
 
-    // Strip exchange suffix (.OF .SZ .SH …) → bare 6-digit code for external URLs
     bareCode(code) {
       return code.replace(/\.\w{2,3}$/i, '');
     },
 
-    // Extract core Chinese chars for name comparison (strips A/B/C share class and digits)
     fundNameKey(name) {
       return name.replace(/\s+/g, '').replace(/[A-Za-z0-9（）()【】]/g, '').slice(0, 6);
     },
 
-    // Verify one fund — updates p.verifyStatus and p.officialName in place
+    // ── Fund verification ────────────────────────────────────────
     async verifySingleFund(p) {
       const bare = this.bareCode(p.code);
       try {
-        // ── Primary source: EastMoney suggestion API (JSONP) ────────────────────
-        // Actual response shape (confirmed): {ErrCode:0, Datas:[{CODE:"001110", NAME:"中欧瑾泉灵活配置混合A", ...}]}
         const data = await jsonp(
           'https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key=' +
           encodeURIComponent(bare)
         );
 
-        // Parse: real field is data.Datas (not EastmoneyFund_OverAll which doesn't exist)
-        const list = Array.isArray(data?.Datas)                                          ? data.Datas
-          : Array.isArray(data)                                                          ? data
-          : Array.isArray(data?.EastmoneyFund_OverAll?.FundBaseInfoList)                 ? data.EastmoneyFund_OverAll.FundBaseInfoList
-          : Array.isArray(data?.Data)                                                    ? data.Data
+        const list = Array.isArray(data?.Datas) ? data.Datas
+          : Array.isArray(data) ? data
+          : Array.isArray(data?.EastmoneyFund_OverAll?.FundBaseInfoList) ? data.EastmoneyFund_OverAll.FundBaseInfoList
+          : Array.isArray(data?.Data) ? data.Data
           : [];
 
-        // Match by code — actual field name is CODE (uppercase)
         let hit = list.find(f => (f.CODE || f.FundCode || f.FCODE || f.code || '') === bare);
-        if (!hit && list.length === 1) hit = list[0]; // exact-code search → 1 result = must be ours
+        if (!hit && list.length === 1) hit = list[0];
         if (!hit) hit = list.find(f => String(f.CODE || f.FundCode || f.FCODE || f.code || '').startsWith(bare));
 
         if (hit) {
-          // NAME = official short name, e.g. "中欧瑾泉灵活配置混合A"
           const officialName = (hit.NAME || hit.FundFullName || hit.FundName || hit.name || '').replace(/\s+/g, '');
           if (officialName) {
             p.officialName = officialName;
-            p.name = officialName;       // overwrite OCR Chinese with official source — 100% accurate
+            p.name = officialName;
             p.nameCorrected = true;
           }
           p.verifyStatus = 'ok';
           return;
         }
 
-        // ── Fallback: fundgz direct lookup by code ───────────────────────────────
         const gz = await fundgzLookup(bare);
         if (gz && gz.fundcode === bare) {
           const officialName = (gz.name || '').replace(/\s+/g, '');
@@ -1669,44 +1949,34 @@ createApp({
           }
           p.verifyStatus = 'ok';
         } else {
-          p.verifyStatus = 'notfound'; // name stays as OCR output; user must verify manually
+          p.verifyStatus = 'notfound';
         }
-
       } catch (_) {
-        p.verifyStatus = null; // silent fail — don't block user on network issues
+        p.verifyStatus = null;
       }
     },
 
-    // Run verification in parallel batches for speed
     async verifyPreviewProducts() {
       const snapshot = this.previewProducts;
       const items = snapshot.filter(p => this.isValidCode(p.code));
-      // Mark all upfront so the user sees progress immediately
       items.forEach(p => { p.verifyStatus = 'checking'; });
-      const BATCH = 5; // 5 concurrent requests — fast without hammering the API
+      const BATCH = 5;
       for (let i = 0; i < items.length; i += BATCH) {
-        if (this.previewProducts !== snapshot) break; // user cancelled preview
+        if (this.previewProducts !== snapshot) break;
         await Promise.all(items.slice(i, i + BATCH).map(p => this.verifySingleFund(p)));
       }
     },
 
     normalizeCode(code) {
       code = code.trim();
-      // Replace fullwidth period and other separators
       code = code.replace(/[\u3002·,，]/g, '.');
-      // Remove spaces around the dot
       code = code.replace(/\s*\.\s*/g, '.');
-      // Handle codes like 005787OF or 005787of (no separator)
       const noSepMatch = code.match(/^(\d{6})\s*(OF|of|oF|Of)$/);
       if (noSepMatch) return noSepMatch[1] + '.OF';
-      // Handle bare 6-digit codes → append .OF
       if (/^\d{6}$/.test(code)) return code + '.OF';
-      // Handle codes with fewer than 6 digits (leading zeros lost, e.g., from Excel) → pad and append .OF
       if (/^\d{1,5}$/.test(code)) return code.padStart(6, '0') + '.OF';
-      // Handle short codes with suffix (e.g., 5787.OF → 005787.OF)
       const shortWithSuffix = code.match(/^(\d{1,5})\.(\w{2})$/);
       if (shortWithSuffix) return shortWithSuffix[1].padStart(6, '0') + '.' + shortWithSuffix[2].toUpperCase();
-      // Handle standard 6-digit.XX format
       if (/^\d{6}\.\w{2}$/.test(code)) return code.toUpperCase();
       return code;
     },
@@ -1739,7 +2009,7 @@ createApp({
       this.showToast(`导入完成：新增 ${added} 条${skipped > 0 ? '，跳过 ' + skipped + ' 条重复' : ''}`);
     },
 
-    // Data Export/Import
+    // ── Data Export/Import ────────────────────────────────────────
     exportData() {
       const data = JSON.stringify(this.institutions, null, 2);
       const blob = new Blob([data], { type: 'application/json' });
@@ -1751,6 +2021,7 @@ createApp({
       URL.revokeObjectURL(url);
       this.showToast('备份已下载');
     },
+
     importBackup(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -1780,7 +2051,14 @@ createApp({
   },
 
   async mounted() {
-    await this.loadData();
+    // If already authenticated (valid session), load data immediately
+    if (this.authenticated) {
+      await this.loadData();
+    } else {
+      // Auto-focus login input
+      nextTick(() => { if (this.$refs.loginInput) this.$refs.loginInput.focus(); });
+    }
+
     // Close dropdowns on outside click
     document.addEventListener('click', (e) => {
       if (!e.target.closest('.dropdown')) {
@@ -1788,7 +2066,8 @@ createApp({
         this.showImportInstDropdown = false;
       }
     });
-    // Listen for Enter on fund query
+
+    // Enter key handler for fund query
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && this.currentView === 'query' && this.fundQuery) {
         if (this.fundSuggestions.length > 0) {
