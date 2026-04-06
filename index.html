@@ -237,6 +237,56 @@
       color: var(--text-secondary);
     }
 
+    /* ── Fund Tags ──────────────────────────────────────────── */
+    .fund-tags {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 14px;
+      animation: fadeInTags 0.3s ease;
+    }
+    @keyframes fadeInTags {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .fund-tag {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1.4;
+      white-space: nowrap;
+    }
+    .tag-blue   { background: #dbeafe; color: #1e40af; }
+    .tag-green  { background: #d1fae5; color: #065f46; }
+    .tag-amber  { background: #fef3c7; color: #92400e; }
+    .tag-orange { background: #ffedd5; color: #9a3412; }
+    .tag-red    { background: #fee2e2; color: #991b1b; }
+    .tag-gray   { background: #f3f4f6; color: #374151; }
+    .tag-gold   { background: #fef9c3; color: #854d0e; }
+
+    .fund-tags-loading {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 14px;
+    }
+    .tag-skeleton {
+      display: inline-block;
+      width: 60px;
+      height: 22px;
+      border-radius: 20px;
+      background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+    }
+    @keyframes shimmer {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
     /* ── 3.2 Form Elements ─────────────────────────────────────── */
     .input-group {
       margin-bottom: 14px;
@@ -858,6 +908,19 @@
         <div class="result-detail" v-if="queryResult === 'not-investable'">
           {{ selectedInstitution.name }} 的产品池中未找到该产品
         </div>
+        <div class="fund-tags-loading" v-if="queryResult === 'investable' && fundTagsLoading">
+          <span class="tag-skeleton"></span>
+          <span class="tag-skeleton"></span>
+          <span class="tag-skeleton"></span>
+        </div>
+        <div class="fund-tags" v-if="queryResult === 'investable' && fundTags.length > 0">
+          <span
+            class="fund-tag"
+            v-for="(tag, i) in fundTags"
+            :key="i"
+            :class="'tag-' + tag.color"
+          >{{ tag.label }}</span>
+        </div>
       </div>
 
       <!-- Empty state -->
@@ -1359,6 +1422,129 @@ function fundgzLookup(bare) {
   return curr;
 }
 
+// ── Fund metadata fetch (pingzhongdata) ───────────────────────────────────
+const _fundMetaGlobals = [
+  'fS_name','fS_code','ishb','syl_1n','syl_6y','syl_3y','syl_1y',
+  'fund_sourceRate','fund_Rate','fund_minsg','stockCodes','stockCodesNew',
+  'Data_netWorthTrend','Data_ACWorthTrend','Data_grandTotal',
+  'Data_rateInSimilarType','Data_rateInSimilarPersent',
+  'Data_fluctuationScale','Data_holderStructure','Data_assetAllocation',
+  'Data_performanceEvaluation','Data_currentFundManager',
+  'Data_buySedemption','Data_fundSharesPositions','swithSameType'
+];
+let _fundMetaSeq = Promise.resolve();
+function fetchFundMeta(bare) {
+  const curr = _fundMetaSeq.then(() => new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => { if(!settled){ settled=true; cleanup(); reject(new Error('timeout')); } }, 8000);
+    const script = document.createElement('script');
+    script.src = 'https://fund.eastmoney.com/pingzhongdata/' + bare + '.js?v=' + Date.now();
+    script.onload = () => {
+      if(settled) return;
+      settled = true;
+      clearTimeout(timer);
+      // Derive fund type from asset allocation
+      let fundType = null;
+      const aa = window.Data_assetAllocation;
+      if (window.ishb) {
+        fundType = '货币型';
+      } else if (aa && aa.series) {
+        const stock = aa.series.find(s => s.name === '股票占净比');
+        const bond = aa.series.find(s => s.name === '债券占净比');
+        const latestStock = stock && stock.data.length > 0 ? stock.data[stock.data.length - 1] : 0;
+        const latestBond = bond && bond.data.length > 0 ? bond.data[bond.data.length - 1] : 0;
+        if (latestStock >= 80) fundType = '股票型';
+        else if (latestStock >= 60) fundType = '混合型-偏股';
+        else if (latestBond >= 80) fundType = '债券型';
+        else if (latestBond >= 60) fundType = '混合型-偏债';
+        else if (latestStock > 0 || latestBond > 0) fundType = '混合型-平衡';
+        else fundType = '其他';
+      }
+      // Derive scale from Data_fluctuationScale
+      let scaleValue = null;
+      const fs = window.Data_fluctuationScale;
+      if (fs && fs.series && fs.series.length > 0) {
+        scaleValue = fs.series[fs.series.length - 1].y;
+      }
+      // Derive inception date from first NAV data point
+      let inceptionDate = null;
+      const nwt = window.Data_netWorthTrend;
+      if (nwt && nwt.length > 0) {
+        inceptionDate = new Date(nwt[0].x).toISOString().slice(0, 10);
+      }
+      const meta = {
+        name: window.fS_name,
+        type: fundType,
+        scale: scaleValue,
+        managers: window.Data_currentFundManager,
+        return1y: window.syl_1n,
+        inceptionDate: inceptionDate,
+      };
+      _fundMetaGlobals.forEach(k => { try { delete window[k]; } catch(e) {} });
+      cleanup();
+      resolve(meta);
+    };
+    script.onerror = () => { if(!settled){ settled=true; clearTimeout(timer); cleanup(); reject(new Error('load failed')); } };
+    function cleanup() { if (script.parentNode) script.parentNode.removeChild(script); }
+    document.head.appendChild(script);
+  }));
+  _fundMetaSeq = curr.catch(() => {});
+  return curr;
+}
+
+// ── Generate fund characteristic tags ─────────────────────────────────────
+function generateFundTags(meta) {
+  const tags = [];
+  // 1. Fund type (二级分类)
+  if (meta.type) {
+    let typeLabel = meta.type;
+    if (meta.name && meta.name.includes('ETF联接')) typeLabel += ' ETF联接';
+    else if (meta.name && /LOF/i.test(meta.name)) typeLabel += ' LOF';
+    tags.push({ label: typeLabel, color: 'blue' });
+  }
+  // 2. Fund scale
+  if (meta.scale != null) {
+    const size = parseFloat(meta.scale);
+    if (!isNaN(size)) {
+      if (size >= 100) tags.push({ label: '百亿规模', color: 'gold' });
+      else if (size >= 50) tags.push({ label: '50亿+', color: 'amber' });
+      else if (size >= 10) tags.push({ label: '10亿+', color: 'gray' });
+      else if (size >= 2) tags.push({ label: '2-10亿', color: 'gray' });
+      else tags.push({ label: '迷你基金', color: 'orange' });
+    }
+  }
+  // 3. Fund manager
+  if (meta.managers && meta.managers.length > 0) {
+    const first = meta.managers[0].name || '';
+    const label = meta.managers.length > 1
+      ? first + ' 等' + meta.managers.length + '人'
+      : first;
+    if (label) tags.push({ label: label, color: 'gray' });
+  }
+  // 4. 1-year performance (A股惯例: 正红负绿)
+  if (meta.return1y != null && meta.return1y !== '') {
+    const val = parseFloat(meta.return1y);
+    if (!isNaN(val)) {
+      const sign = val >= 0 ? '+' : '';
+      tags.push({
+        label: '近1年 ' + sign + val.toFixed(2) + '%',
+        color: val >= 0 ? 'red' : 'green'
+      });
+    }
+  }
+  // 5. Fund age
+  if (meta.inceptionDate) {
+    const inception = new Date(meta.inceptionDate);
+    if (!isNaN(inception.getTime())) {
+      const years = (Date.now() - inception.getTime()) / (365.25 * 24 * 3600 * 1000);
+      if (years < 1) tags.push({ label: '新基金 <1年', color: 'orange' });
+      else if (years >= 10) tags.push({ label: '成立' + Math.floor(years) + '年', color: 'green' });
+      else if (years >= 5) tags.push({ label: '成立' + Math.floor(years) + '年', color: 'green' });
+    }
+  }
+  return tags.slice(0, 5);
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    Section 5 · Vue Application
    ═══════════════════════════════════════════════════════════════════ */
@@ -1384,6 +1570,8 @@ createApp({
       queryResult: null,
       resultVisible: false,
       matchedFund: null,
+      fundTags: [],
+      fundTagsLoading: false,
 
       // Manage
       expandedInst: null,
@@ -1504,6 +1692,8 @@ createApp({
       this.queryResult = null;
       this.resultVisible = false;
       this.fundSuggestions = [];
+      this.fundTags = [];
+      this.fundTagsLoading = false;
       nextTick(() => {
         if (this.$refs.fundInput) this.$refs.fundInput.focus();
       });
@@ -1513,6 +1703,8 @@ createApp({
       this.queryResult = null;
       this.resultVisible = false;
       this.matchedFund = null;
+      this.fundTags = [];
+      this.fundTagsLoading = false;
       if (!this.fundQuery.trim() || !this.selectedInstitution) {
         this.fundSuggestions = [];
         return;
@@ -1536,7 +1728,10 @@ createApp({
       this.fundSuggestions = [];
       this.matchedFund = fund;
       this.queryResult = 'investable';
+      this.fundTags = [];
+      this.fundTagsLoading = true;
       nextTick(() => { this.resultVisible = true; });
+      this.loadFundTags(fund.code);
     },
 
     checkFund() {
@@ -1549,12 +1744,38 @@ createApp({
       if (found) {
         this.matchedFund = found;
         this.queryResult = 'investable';
+        this.fundTags = [];
+        this.fundTagsLoading = true;
+        this.loadFundTags(found.code);
       } else {
         this.matchedFund = null;
         this.queryResult = 'not-investable';
+        this.fundTags = [];
+        this.fundTagsLoading = false;
       }
       this.fundSuggestions = [];
       nextTick(() => { this.resultVisible = true; });
+    },
+
+    async loadFundTags(code) {
+      const bare = this.bareCode(code);
+      if (!this._fundMetaCache) this._fundMetaCache = {};
+      if (this._fundMetaCache[bare]) {
+        this.fundTags = generateFundTags(this._fundMetaCache[bare]);
+        this.fundTagsLoading = false;
+        return;
+      }
+      try {
+        const meta = await fetchFundMeta(bare);
+        this._fundMetaCache[bare] = meta;
+        if (this.matchedFund && this.bareCode(this.matchedFund.code) === bare) {
+          this.fundTags = generateFundTags(meta);
+          this.fundTagsLoading = false;
+        }
+      } catch (e) {
+        this.fundTagsLoading = false;
+        this.fundTags = [];
+      }
     },
 
     // ═══ Manage View ═════════════════════════════════════════════
