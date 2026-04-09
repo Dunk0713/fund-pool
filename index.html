@@ -2006,39 +2006,23 @@ async function fetchFundType(bare) {
   }
 }
 
-// ── Fetch fund top holdings (前十大持仓) via JSONP ─────────────────────────
-function fetchFundHoldings(bare) {
-  return new Promise(resolve => {
-    const cbName = '_fh_' + bare + '_' + Date.now();
-    const timer = setTimeout(() => { delete window[cbName]; resolve([]); }, 6000);
-    window[cbName] = function(data) {
-      clearTimeout(timer);
-      delete window[cbName];
-      try {
-        const html = data?.Data?.Content || '';
-        const rows = [];
-        const regex = /<td[^>]*>(\d+)<\/td>\s*<td[^>]*><a[^>]*>([^<]+)<\/a><\/td>\s*(?:<td[^>]*>[^<]*<\/td>\s*){0,2}<td[^>]*>([\d.]+)%<\/td>/gi;
-        let m;
-        while ((m = regex.exec(html)) !== null && rows.length < 10) {
-          rows.push({ name: m[2].trim(), ratio: parseFloat(m[3]) || 0 });
-        }
-        if (rows.length > 0) { resolve(rows); return; }
-        // Fallback: simpler parsing
-        const nameRe = /<a[^>]*>([^<]{2,10})<\/a>/gi;
-        const ratioRe = /([\d.]+)%/g;
-        const names = [], ratios = [];
-        while ((m = nameRe.exec(html)) !== null) names.push(m[1].trim());
-        while ((m = ratioRe.exec(html)) !== null) ratios.push(parseFloat(m[1]));
-        const len = Math.min(names.length, ratios.length, 10);
-        for (let i = 0; i < len; i++) rows.push({ name: names[i], ratio: ratios[i] });
-        resolve(rows);
-      } catch (_) { resolve([]); }
-    };
-    const s = document.createElement('script');
-    s.src = 'https://api.fund.eastmoney.com/f10/FundArchivesDatas?callback=' + cbName + '&type=jjcc&code=' + bare + '&topline=10&year=&month=';
-    s.onerror = () => { clearTimeout(timer); delete window[cbName]; resolve([]); };
-    document.head.appendChild(s);
-  });
+// ── Fetch fund top holdings (前十大持仓) ──────────────────────────────────
+async function fetchFundHoldings(bare) {
+  try {
+    const resp = await fetch(
+      'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNInverstPosition?plat=Android&appType=ttjj&product=EFund&Version=1&deviceid=1&FCODE=' + bare
+    );
+    if (!resp.ok) return [];
+    const json = await resp.json();
+    const stocks = json?.Datas?.fundStocks;
+    if (!Array.isArray(stocks) || stocks.length === 0) return [];
+    return stocks.slice(0, 10).map(s => ({
+      name: s.GPDM ? (s.GPJC || s.GPDM) : (s.GPJC || ''),
+      ratio: parseFloat(s.JZBL) || 0
+    }));
+  } catch (_) {
+    return [];
+  }
 }
 
 // ── Fund metadata fetch (pingzhongdata) ───────────────────────────────────
@@ -2091,6 +2075,8 @@ function fetchFundMeta(bare) {
       if (nwt && nwt.length > 0) {
         inceptionDate = new Date(nwt[0].x).toISOString().slice(0, 10);
       }
+      // Top holdings placeholder (loaded separately via fetchFundHoldings)
+      let topHoldings = [];
       // Extract latest NAV and daily change
       let latestNav = null, navDate = null, dailyChange = null;
       const nwtArr = window.Data_netWorthTrend;
@@ -2139,7 +2125,7 @@ function fetchFundMeta(bare) {
         return1y: window.syl_1n,
         inceptionDate: inceptionDate,
         latestNav, navDate, dailyChange,
-        returns, topHoldings: [], managerDetails,
+        returns, topHoldings, managerDetails,
       };
       _fundMetaGlobals.forEach(k => { try { delete window[k]; } catch(e) {} });
       cleanup();
