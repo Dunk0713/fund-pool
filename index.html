@@ -287,6 +287,382 @@
       100% { background-position: -200% 0; }
     }
 
+    /* ── Fund Detail Card ───────────────────────────────────────── */
+    .fund-detail-card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      margin-top: 14px;
+      overflow: hidden;
+      animation: fadeInUp 0.3s ease forwards;
+    }
+    .fund-detail-section {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .fund-detail-section:last-child { border-bottom: none; }
+    .fund-detail-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-tertiary);
+      margin-bottom: 10px;
+      letter-spacing: 0.3px;
+    }
+    .nav-row {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+    .nav-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+    .nav-change {
+      font-size: 15px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .nav-change.up { color: #dc2626; }
+    .nav-change.down { color: #16a34a; }
+    .nav-date {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      margin-top: 4px;
+    }
+    .returns-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 0;
+    }
+    .return-cell {
+      text-align: center;
+      padding: 6px 2px;
+    }
+    .return-cell .label {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      margin-bottom: 4px;
+    }
+    .return-cell .value {
+      font-size: 14px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .return-cell .value.up { color: #dc2626; }
+    .return-cell .value.down { color: #16a34a; }
+    .return-cell .value.flat { color: var(--text-tertiary); }
+    .manager-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 0;
+    }
+    .manager-row + .manager-row { border-top: 1px solid #f3f4f6; }
+    .manager-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .manager-info {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      text-align: right;
+    }
+    .holdings-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .holding-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+    }
+    .holding-rank {
+      width: 18px;
+      height: 18px;
+      border-radius: 4px;
+      background: #f3f4f6;
+      color: var(--text-tertiary);
+      font-size: 11px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .holding-rank.top3 { background: var(--primary-light); color: var(--primary); }
+    .holding-name { flex: 1; color: var(--text); }
+    .holding-ratio {
+      font-variant-numeric: tabular-nums;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+    .holding-bar-bg {
+      width: 50px;
+      height: 6px;
+      background: #f3f4f6;
+      border-radius: 3px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .holding-bar {
+      height: 100%;
+      background: var(--primary);
+      border-radius: 3px;
+      opacity: 0.6;
+    }
+    .fund-detail-loading {
+      padding: 32px;
+      text-align: center;
+      color: var(--text-tertiary);
+      font-size: 13px;
+    }
+    .fund-detail-loading .dot-pulse {
+      display: inline-flex;
+      gap: 4px;
+    }
+    .fund-detail-loading .dot-pulse span {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--text-tertiary);
+      animation: dotPulse 1.2s infinite;
+    }
+    .fund-detail-loading .dot-pulse span:nth-child(2) { animation-delay: 0.2s; }
+    .fund-detail-loading .dot-pulse span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes dotPulse {
+      0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+      40% { opacity: 1; transform: scale(1); }
+    }
+
+    /* ── Pool Stats ──────────────────────────────────────────── */
+    .pool-stats {
+      padding: 12px 20px 16px;
+      border-top: 1px solid var(--border);
+    }
+    .pool-stats-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .pool-stats-row:last-child { margin-bottom: 0; }
+    .pool-stat-label {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      white-space: nowrap;
+      min-width: 32px;
+    }
+    .pool-bar-chart {
+      display: flex;
+      flex: 1;
+      height: 20px;
+      border-radius: 4px;
+      overflow: hidden;
+      background: #f3f4f6;
+    }
+    .pool-bar-seg {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 600;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      transition: width 0.4s ease;
+    }
+    .pool-bar-seg.stock { background: #3b82f6; }
+    .pool-bar-seg.mixed { background: #8b5cf6; }
+    .pool-bar-seg.bond { background: #10b981; }
+    .pool-bar-seg.money { background: #f59e0b; }
+    .pool-bar-seg.qdii { background: #ec4899; }
+    .pool-bar-seg.other { background: #9ca3af; }
+    .pool-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      margin-top: 6px;
+    }
+    .pool-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+    .pool-legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+    .pool-total-scale {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 8px;
+    }
+    .pool-total-scale strong {
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    /* ── Compare ───────────────────────────────────────────── */
+    .compare-bar {
+      position: fixed;
+      bottom: 70px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--primary);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 24px;
+      box-shadow: 0 4px 16px rgba(0,85,212,0.3);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      z-index: 100;
+      font-size: 14px;
+      font-weight: 500;
+      animation: fadeInUp 0.2s ease;
+    }
+    .compare-bar button {
+      background: rgba(255,255,255,0.2);
+      border: none;
+      color: #fff;
+      padding: 6px 14px;
+      border-radius: 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .compare-bar button:hover { background: rgba(255,255,255,0.3); }
+    .compare-bar .clear-btn { background: none; padding: 6px 8px; opacity: 0.7; }
+    .compare-bar .clear-btn:hover { opacity: 1; }
+    .compare-modal-mask {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 200;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .compare-modal {
+      background: var(--card);
+      border-radius: 16px 16px 0 0;
+      width: 100%;
+      max-width: 500px;
+      max-height: 85vh;
+      overflow-y: auto;
+      animation: slideUp 0.3s ease;
+    }
+    @keyframes slideUp {
+      from { transform: translateY(100%); }
+      to { transform: translateY(0); }
+    }
+    .compare-header {
+      position: sticky;
+      top: 0;
+      background: var(--card);
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 1;
+    }
+    .compare-header h3 {
+      font-size: 17px;
+      font-weight: 600;
+    }
+    .compare-table {
+      width: 100%;
+      font-size: 13px;
+      border-collapse: collapse;
+    }
+    .compare-table th {
+      position: sticky;
+      top: 52px;
+      background: #f9fafb;
+      padding: 10px 12px;
+      font-weight: 600;
+      font-size: 12px;
+      color: var(--text-secondary);
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+    }
+    .compare-table th:first-child {
+      text-align: left;
+      color: var(--text-tertiary);
+      width: 72px;
+    }
+    .compare-table td {
+      padding: 10px 12px;
+      text-align: center;
+      border-bottom: 1px solid #f3f4f6;
+      font-variant-numeric: tabular-nums;
+    }
+    .compare-table td:first-child {
+      text-align: left;
+      font-size: 12px;
+      color: var(--text-tertiary);
+      font-weight: 500;
+    }
+    .compare-table .best {
+      color: #dc2626;
+      font-weight: 700;
+    }
+    .compare-fund-name {
+      font-size: 12px;
+      max-width: 100px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ── Type Filter Chips ───────────────────────────────────── */
+    .filter-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+      margin-bottom: 4px;
+    }
+    .filter-chip {
+      padding: 4px 12px;
+      border-radius: 16px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 1.5px solid var(--border);
+      background: var(--card);
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all var(--transition);
+      font-family: inherit;
+    }
+    .filter-chip:hover { border-color: var(--primary); color: var(--primary); }
+    .filter-chip.active {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+    .compare-check {
+      width: 18px;
+      height: 18px;
+      border-radius: 4px;
+      border: 1.5px solid var(--border);
+      cursor: pointer;
+      accent-color: var(--primary);
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+
     /* ── 3.2 Form Elements ─────────────────────────────────────── */
     .input-group {
       margin-bottom: 14px;
@@ -923,6 +1299,76 @@
         </div>
       </div>
 
+      <!-- Fund Detail Card -->
+      <div class="fund-detail-card" v-if="queryResult === 'investable' && fundDetail">
+        <!-- NAV Section -->
+        <div class="fund-detail-section">
+          <div class="fund-detail-title">最新净值</div>
+          <div class="nav-row">
+            <span class="nav-value">{{ fundDetail.latestNav ? fundDetail.latestNav.toFixed(4) : '--' }}</span>
+            <span
+              class="nav-change"
+              :class="fundDetail.dailyChange >= 0 ? 'up' : 'down'"
+              v-if="fundDetail.dailyChange != null"
+            >{{ fundDetail.dailyChange >= 0 ? '+' : '' }}{{ fundDetail.dailyChange.toFixed(2) }}%</span>
+          </div>
+          <div class="nav-date" v-if="fundDetail.navDate">{{ fundDetail.navDate }}</div>
+        </div>
+
+        <!-- Returns Section -->
+        <div class="fund-detail-section" v-if="fundDetail.returns">
+          <div class="fund-detail-title">阶段收益率</div>
+          <div class="returns-grid">
+            <div class="return-cell" v-for="p in [
+              { key: '1m', label: '近1月' },
+              { key: '3m', label: '近3月' },
+              { key: '6m', label: '近6月' },
+              { key: '1y', label: '近1年' },
+              { key: 'all', label: '成立来' }
+            ]" :key="p.key">
+              <div class="label">{{ p.label }}</div>
+              <div class="value" :class="returnClass(fundDetail.returns[p.key])">
+                {{ formatReturn(fundDetail.returns[p.key]) }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Manager Section -->
+        <div class="fund-detail-section" v-if="fundDetail.managerDetails && fundDetail.managerDetails.length > 0">
+          <div class="fund-detail-title">基金经理</div>
+          <div class="manager-row" v-for="m in fundDetail.managerDetails" :key="m.name">
+            <span class="manager-name">{{ m.name }}</span>
+            <span class="manager-info">
+              <template v-if="m.workTime">任职{{ m.workTime }}</template>
+              <template v-if="m.fundSize"><br>管理规模 {{ m.fundSize }}</template>
+            </span>
+          </div>
+        </div>
+
+        <!-- Top Holdings Section -->
+        <div class="fund-detail-section" v-if="fundDetail.topHoldings && fundDetail.topHoldings.length > 0">
+          <div class="fund-detail-title">前十大持仓</div>
+          <div class="holdings-list">
+            <div class="holding-item" v-for="(h, i) in fundDetail.topHoldings" :key="i">
+              <span class="holding-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
+              <span class="holding-name">{{ h.name }}</span>
+              <span class="holding-ratio">{{ h.ratio.toFixed(2) }}%</span>
+              <span class="holding-bar-bg">
+                <span class="holding-bar" :style="{ width: (h.ratio / maxHoldingRatio * 100) + '%' }"></span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="fund-detail-card" v-if="queryResult === 'investable' && fundTagsLoading">
+        <div class="fund-detail-loading">
+          <div class="dot-pulse"><span></span><span></span><span></span></div>
+          <div style="margin-top:8px;">加载基金详情...</div>
+        </div>
+      </div>
+
       <!-- Empty state -->
       <div class="empty-state" v-if="institutions.length === 0">
         <div class="empty-icon">📋</div>
@@ -951,6 +1397,11 @@
             <div class="inst-meta">{{ inst.products.length }} 只产品</div>
           </div>
           <div class="inst-actions" @click.stop>
+            <button class="icon-btn" @click="loadPoolStats(inst)" title="概览统计" style="color:var(--primary);">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 20V10M12 20V4M6 20v-6"/>
+              </svg>
+            </button>
             <button class="icon-btn danger" @click="confirmDeleteInst(inst)" title="删除">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14"/>
@@ -959,17 +1410,61 @@
           </div>
         </div>
 
+        <!-- Pool Stats -->
+        <div class="pool-stats" v-if="poolStatsInst === inst.id && poolStats">
+          <div class="fund-detail-title">类型分布</div>
+          <div class="pool-bar-chart" v-if="poolStats.segments.length > 0">
+            <div
+              class="pool-bar-seg"
+              v-for="s in poolStats.segments"
+              :key="s.type"
+              :class="s.cls"
+              :style="{ width: s.pct + '%' }"
+              :title="s.type + ' ' + s.count + '只'"
+            >{{ s.pct >= 10 ? s.count : '' }}</div>
+          </div>
+          <div class="pool-legend">
+            <span class="pool-legend-item" v-for="s in poolStats.segments" :key="s.type">
+              <span class="pool-legend-dot" :style="{ background: s.color }"></span>
+              {{ s.type }} {{ s.count }}只
+            </span>
+          </div>
+          <div class="pool-total-scale" v-if="poolStats.totalScale != null">
+            产品池总规模约 <strong>{{ poolStats.totalScale }}</strong> 亿元
+          </div>
+          <div class="pool-total-scale" v-if="poolStats.loading">
+            <div class="dot-pulse" style="display:inline-flex;gap:4px;vertical-align:middle;"><span style="width:5px;height:5px;border-radius:50%;background:var(--text-tertiary);animation:dotPulse 1.2s infinite;"></span><span style="width:5px;height:5px;border-radius:50%;background:var(--text-tertiary);animation:dotPulse 1.2s infinite 0.2s;"></span><span style="width:5px;height:5px;border-radius:50%;background:var(--text-tertiary);animation:dotPulse 1.2s infinite 0.4s;"></span></div>
+            正在统计规模...
+          </div>
+        </div>
+
         <!-- Expanded Product Section -->
         <div class="product-section" v-if="expandedInst === inst.id">
+          <!-- Search + Type Filter -->
           <div class="product-search">
             <input v-model="productSearchText" placeholder="搜索产品...">
           </div>
+          <div class="filter-chips" v-if="getProductTypes(inst).length > 1">
+            <button
+              class="filter-chip"
+              :class="{ active: !productTypeFilter }"
+              @click="productTypeFilter = ''"
+            >全部</button>
+            <button
+              class="filter-chip"
+              v-for="t in getProductTypes(inst)"
+              :key="t"
+              :class="{ active: productTypeFilter === t }"
+              @click="productTypeFilter = productTypeFilter === t ? '' : t"
+            >{{ t }}</button>
+          </div>
           <table class="product-table">
             <thead>
-              <tr><th>代码</th><th>名称</th><th></th></tr>
+              <tr><th><input type="checkbox" class="compare-check" title="对比" @change="toggleAllCompare(inst, $event)" :checked="isAllCompareChecked(inst)"></th><th>代码</th><th>名称</th><th></th></tr>
             </thead>
             <tbody>
               <tr v-for="p in filteredProducts(inst)" :key="p.code">
+                <td><input type="checkbox" class="compare-check" :checked="compareSet.has(p.code)" @change="toggleCompare(p, $event)"></td>
                 <td>{{ p.code }}</td>
                 <td>{{ p.name }}</td>
                 <td>
@@ -987,6 +1482,77 @@
             <input v-model="newProductName" placeholder="名称">
             <button class="btn btn-primary btn-sm" @click="addProduct(inst)">添加</button>
           </div>
+        </div>
+      </div>
+
+      <!-- Compare Floating Bar -->
+      <div class="compare-bar" v-if="compareList.length > 0">
+        <span>已选 {{ compareList.length }} 只</span>
+        <button @click="showCompareModal_()" :disabled="compareList.length < 2">开始对比</button>
+        <button class="clear-btn" @click="clearCompare">✕</button>
+      </div>
+
+      <!-- Compare Modal -->
+      <div class="compare-modal-mask" v-if="showCompareModal" @click.self="showCompareModal = false">
+        <div class="compare-modal">
+          <div class="compare-header">
+            <h3>基金对比</h3>
+            <button class="icon-btn" @click="showCompareModal = false" style="width:28px;height:28px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+          <div v-if="compareLoading" class="fund-detail-loading" style="padding:40px;">
+            <div class="dot-pulse"><span></span><span></span><span></span></div>
+            <div style="margin-top:8px;">正在加载对比数据...</div>
+          </div>
+          <table class="compare-table" v-if="!compareLoading && compareData.length > 0">
+            <thead>
+              <tr>
+                <th></th>
+                <th v-for="f in compareData" :key="f.code">
+                  <div class="compare-fund-name">{{ f.name }}</div>
+                  <div style="font-size:11px;color:var(--text-tertiary);font-weight:400;">{{ f.code }}</div>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>类型</td>
+                <td v-for="f in compareData" :key="f.code">{{ f.type || '--' }}</td>
+              </tr>
+              <tr>
+                <td>最新净值</td>
+                <td v-for="f in compareData" :key="f.code">{{ f.latestNav ? f.latestNav.toFixed(4) : '--' }}</td>
+              </tr>
+              <tr>
+                <td>规模(亿)</td>
+                <td v-for="f in compareData" :key="f.code">{{ f.scale ? parseFloat(f.scale).toFixed(2) : '--' }}</td>
+              </tr>
+              <tr v-for="p in [
+                { key: '1m', label: '近1月' },
+                { key: '3m', label: '近3月' },
+                { key: '6m', label: '近6月' },
+                { key: '1y', label: '近1年' },
+                { key: 'all', label: '成立来' }
+              ]" :key="p.key">
+                <td>{{ p.label }}</td>
+                <td v-for="f in compareData" :key="f.code"
+                    :class="{ best: isBestReturn(f, p.key) }">
+                  {{ formatReturn(f.returns && f.returns[p.key]) }}
+                </td>
+              </tr>
+              <tr>
+                <td>基金经理</td>
+                <td v-for="f in compareData" :key="f.code">{{ f.managerDetails && f.managerDetails.length > 0 ? f.managerDetails.map(m => m.name).join('、') : '--' }}</td>
+              </tr>
+              <tr>
+                <td>成立日期</td>
+                <td v-for="f in compareData" :key="f.code">{{ f.inceptionDate || '--' }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -1440,6 +2006,41 @@ async function fetchFundType(bare) {
   }
 }
 
+// ── Fetch fund top holdings (前十大持仓) via JSONP ─────────────────────────
+function fetchFundHoldings(bare) {
+  return new Promise(resolve => {
+    const cbName = '_fh_' + bare + '_' + Date.now();
+    const timer = setTimeout(() => { delete window[cbName]; resolve([]); }, 6000);
+    window[cbName] = function(data) {
+      clearTimeout(timer);
+      delete window[cbName];
+      try {
+        const html = data?.Data?.Content || '';
+        const rows = [];
+        const regex = /<td[^>]*>(\d+)<\/td>\s*<td[^>]*><a[^>]*>([^<]+)<\/a><\/td>\s*(?:<td[^>]*>[^<]*<\/td>\s*){0,2}<td[^>]*>([\d.]+)%<\/td>/gi;
+        let m;
+        while ((m = regex.exec(html)) !== null && rows.length < 10) {
+          rows.push({ name: m[2].trim(), ratio: parseFloat(m[3]) || 0 });
+        }
+        if (rows.length > 0) { resolve(rows); return; }
+        // Fallback: simpler parsing
+        const nameRe = /<a[^>]*>([^<]{2,10})<\/a>/gi;
+        const ratioRe = /([\d.]+)%/g;
+        const names = [], ratios = [];
+        while ((m = nameRe.exec(html)) !== null) names.push(m[1].trim());
+        while ((m = ratioRe.exec(html)) !== null) ratios.push(parseFloat(m[1]));
+        const len = Math.min(names.length, ratios.length, 10);
+        for (let i = 0; i < len; i++) rows.push({ name: names[i], ratio: ratios[i] });
+        resolve(rows);
+      } catch (_) { resolve([]); }
+    };
+    const s = document.createElement('script');
+    s.src = 'https://api.fund.eastmoney.com/f10/FundArchivesDatas?callback=' + cbName + '&type=jjcc&code=' + bare + '&topline=10&year=&month=';
+    s.onerror = () => { clearTimeout(timer); delete window[cbName]; resolve([]); };
+    document.head.appendChild(s);
+  });
+}
+
 // ── Fund metadata fetch (pingzhongdata) ───────────────────────────────────
 const _fundMetaGlobals = [
   'fS_name','fS_code','ishb','syl_1n','syl_6y','syl_3y','syl_1y',
@@ -1490,6 +2091,46 @@ function fetchFundMeta(bare) {
       if (nwt && nwt.length > 0) {
         inceptionDate = new Date(nwt[0].x).toISOString().slice(0, 10);
       }
+      // Extract latest NAV and daily change
+      let latestNav = null, navDate = null, dailyChange = null;
+      const nwtArr = window.Data_netWorthTrend;
+      if (nwtArr && nwtArr.length > 0) {
+        const last = nwtArr[nwtArr.length - 1];
+        latestNav = last.y;
+        navDate = new Date(last.x).toISOString().slice(0, 10);
+        if (last.equityReturn != null) dailyChange = last.equityReturn;
+      }
+      // Extract multi-period returns
+      const returns = {};
+      if (nwtArr && nwtArr.length > 1) {
+        const lastNav = nwtArr[nwtArr.length - 1].y;
+        const lastTs = nwtArr[nwtArr.length - 1].x;
+        const periods = { '1m': 30, '3m': 90, '6m': 180, '1y': 365, 'all': Infinity };
+        for (const [key, days] of Object.entries(periods)) {
+          if (days === Infinity) {
+            const firstNav = nwtArr[0].y;
+            if (firstNav > 0) returns[key] = ((lastNav - firstNav) / firstNav * 100).toFixed(2);
+          } else {
+            const target = lastTs - days * 24 * 3600 * 1000;
+            let closest = nwtArr[0];
+            for (const pt of nwtArr) {
+              if (Math.abs(pt.x - target) < Math.abs(closest.x - target)) closest = pt;
+            }
+            if (closest.y > 0) returns[key] = ((lastNav - closest.y) / closest.y * 100).toFixed(2);
+          }
+        }
+      }
+      returns['1y_raw'] = window.syl_1n;
+      // Extract manager details
+      let managerDetails = [];
+      const mgrs = window.Data_currentFundManager;
+      if (mgrs && mgrs.length > 0) {
+        managerDetails = mgrs.map(m => ({
+          name: m.name || '',
+          workTime: m.workTime || '',
+          fundSize: m.fundSize || '',
+        }));
+      }
       const meta = {
         name: window.fS_name,
         type: fundType,
@@ -1497,6 +2138,8 @@ function fetchFundMeta(bare) {
         managers: window.Data_currentFundManager,
         return1y: window.syl_1n,
         inceptionDate: inceptionDate,
+        latestNav, navDate, dailyChange,
+        returns, topHoldings: [], managerDetails,
       };
       _fundMetaGlobals.forEach(k => { try { delete window[k]; } catch(e) {} });
       cleanup();
@@ -1610,6 +2253,23 @@ createApp({
       ocrStatus: '',
       previewProducts: [],
 
+      // Fund detail
+      fundDetail: null,
+
+      // Manage - pool stats
+      poolStatsInst: null,
+      poolStats: null,
+
+      // Manage - type filter
+      productTypeFilter: '',
+
+      // Compare
+      compareList: [],
+      compareSet: new Set(),
+      showCompareModal: false,
+      compareLoading: false,
+      compareData: [],
+
       // Toast
       toast: { message: '', visible: false, timer: null }
     };
@@ -1632,6 +2292,10 @@ createApp({
     },
     selectedPreviewCount() {
       return this.previewProducts.filter(p => p.selected).length;
+    },
+    maxHoldingRatio() {
+      if (!this.fundDetail || !this.fundDetail.topHoldings || this.fundDetail.topHoldings.length === 0) return 1;
+      return Math.max(...this.fundDetail.topHoldings.map(h => h.ratio), 1);
     }
   },
 
@@ -1698,7 +2362,12 @@ createApp({
       this.currentView = view;
       this.queryResult = null;
       this.resultVisible = false;
+      this.fundDetail = null;
       this.previewProducts = [];
+      this.clearCompare();
+      this.poolStatsInst = null;
+      this.poolStats = null;
+      this.productTypeFilter = '';
     },
 
     // ═══ Query View ══════════════════════════════════════════════
@@ -1712,6 +2381,7 @@ createApp({
       this.fundSuggestions = [];
       this.fundTags = [];
       this.fundTagsLoading = false;
+      this.fundDetail = null;
       nextTick(() => {
         if (this.$refs.fundInput) this.$refs.fundInput.focus();
       });
@@ -1723,6 +2393,7 @@ createApp({
       this.matchedFund = null;
       this.fundTags = [];
       this.fundTagsLoading = false;
+      this.fundDetail = null;
       if (!this.fundQuery.trim() || !this.selectedInstitution) {
         this.fundSuggestions = [];
         return;
@@ -1748,6 +2419,7 @@ createApp({
       this.queryResult = 'investable';
       this.fundTags = [];
       this.fundTagsLoading = true;
+      this.fundDetail = null;
       nextTick(() => { this.resultVisible = true; });
       this.loadFundTags(fund.code);
     },
@@ -1764,12 +2436,14 @@ createApp({
         this.queryResult = 'investable';
         this.fundTags = [];
         this.fundTagsLoading = true;
+        this.fundDetail = null;
         this.loadFundTags(found.code);
       } else {
         this.matchedFund = null;
         this.queryResult = 'not-investable';
         this.fundTags = [];
         this.fundTagsLoading = false;
+        this.fundDetail = null;
       }
       this.fundSuggestions = [];
       nextTick(() => { this.resultVisible = true; });
@@ -1779,19 +2453,24 @@ createApp({
       const bare = this.bareCode(code);
       if (!this._fundMetaCache) this._fundMetaCache = {};
       if (this._fundMetaCache[bare]) {
-        this.fundTags = generateFundTags(this._fundMetaCache[bare]);
+        const cached = this._fundMetaCache[bare];
+        this.fundTags = generateFundTags(cached);
+        this.fundDetail = cached;
         this.fundTagsLoading = false;
         return;
       }
       try {
-        const [meta, apiType] = await Promise.all([
+        const [meta, apiType, holdings] = await Promise.all([
           fetchFundMeta(bare),
-          fetchFundType(bare)
+          fetchFundType(bare),
+          fetchFundHoldings(bare)
         ]);
         if (apiType) meta.type = apiType;
+        if (holdings && holdings.length > 0) meta.topHoldings = holdings;
         this._fundMetaCache[bare] = meta;
         if (this.matchedFund && this.bareCode(this.matchedFund.code) === bare) {
           this.fundTags = generateFundTags(meta);
+          this.fundDetail = meta;
           this.fundTagsLoading = false;
         }
       } catch (e) {
@@ -1804,11 +2483,17 @@ createApp({
     toggleExpand(id) {
       this.expandedInst = this.expandedInst === id ? null : id;
       this.productSearchText = '';
+      this.productTypeFilter = '';
+      this.clearCompare();
     },
 
     filteredProducts(inst) {
-      if (!this.productSearchText.trim()) return inst.products;
-      return inst.products.filter(p =>
+      let list = inst.products;
+      if (this.productTypeFilter) {
+        list = list.filter(p => this.classifyProduct(p) === this.productTypeFilter);
+      }
+      if (!this.productSearchText.trim()) return list;
+      return list.filter(p =>
         fuzzyMatch(this.productSearchText, p.name).match ||
         fuzzyMatch(this.productSearchText, p.code).match
       );
@@ -1874,6 +2559,181 @@ createApp({
       inst.products = inst.products.filter(p => p.code !== code);
       inst.updatedAt = new Date().toISOString();
       await this.saveInst(inst);
+    },
+
+    // ── Helper methods for templates ─────────────────────────────
+    formatReturn(val) {
+      if (val == null || val === '') return '--';
+      const n = parseFloat(val);
+      if (isNaN(n)) return '--';
+      return (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
+    },
+    returnClass(val) {
+      if (val == null || val === '') return 'flat';
+      const n = parseFloat(val);
+      if (isNaN(n) || n === 0) return 'flat';
+      return n > 0 ? 'up' : 'down';
+    },
+
+    // ── Pool Stats (Feature 2) ───────────────────────────────────
+    async loadPoolStats(inst) {
+      if (this.poolStatsInst === inst.id) {
+        this.poolStatsInst = null;
+        this.poolStats = null;
+        return;
+      }
+      this.poolStatsInst = inst.id;
+      // Classify products by name heuristic first
+      const typeMap = { '股票': 0, '混合': 0, '债券': 0, '货币': 0, 'QDII': 0, '其他': 0 };
+      const colorMap = { '股票': '#3b82f6', '混合': '#8b5cf6', '债券': '#10b981', '货币': '#f59e0b', 'QDII': '#ec4899', '其他': '#9ca3af' };
+      const clsMap = { '股票': 'stock', '混合': 'mixed', '债券': 'bond', '货币': 'money', 'QDII': 'qdii', '其他': 'other' };
+      for (const p of inst.products) {
+        const nm = (p.name || '').toUpperCase();
+        if (/QDII|海外|全球|美国|港股通/.test(nm)) typeMap['QDII']++;
+        else if (/货币|现金/.test(nm)) typeMap['货币']++;
+        else if (/债|纯债|信用|利率/.test(nm)) typeMap['债券']++;
+        else if (/股票|指数|ETF|LOF|量化|成长|价值/.test(nm)) typeMap['股票']++;
+        else if (/混合|灵活|平衡|配置|稳健|优选|精选/.test(nm)) typeMap['混合']++;
+        else typeMap['其他']++;
+      }
+      const total = inst.products.length || 1;
+      const segments = Object.entries(typeMap)
+        .filter(([, c]) => c > 0)
+        .map(([type, count]) => ({
+          type, count,
+          pct: Math.round(count / total * 100),
+          color: colorMap[type],
+          cls: clsMap[type]
+        }))
+        .sort((a, b) => b.count - a.count);
+      this.poolStats = { segments, totalScale: null, loading: true };
+      // Async: sample up to 20 products for scale estimation
+      const sample = inst.products.slice(0, 20);
+      let scaleSum = 0, scaleCount = 0;
+      const batchSize = 5;
+      for (let i = 0; i < sample.length; i += batchSize) {
+        const batch = sample.slice(i, i + batchSize);
+        const results = await Promise.allSettled(
+          batch.map(async p => {
+            try {
+              const resp = await fetch(
+                'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNFInfo?plat=Android&appType=ttjj&product=EFund&Version=1&deviceid=1&Fcodes=' + this.bareCode(p.code)
+              );
+              const json = await resp.json();
+              const fgs = json?.Datas?.[0]?.FundScale;
+              if (fgs) { const m = fgs.match(/([\d.]+)/); if (m) return parseFloat(m[1]); }
+              return null;
+            } catch (_) { return null; }
+          })
+        );
+        for (const r of results) {
+          if (r.status === 'fulfilled' && r.value != null) {
+            scaleSum += r.value;
+            scaleCount++;
+          }
+        }
+      }
+      if (this.poolStatsInst === inst.id && this.poolStats) {
+        if (scaleCount > 0) {
+          const avgScale = scaleSum / scaleCount;
+          const estimated = (avgScale * inst.products.length).toFixed(1);
+          this.poolStats.totalScale = estimated;
+        }
+        this.poolStats.loading = false;
+      }
+    },
+
+    // ── Product Type Filter (Feature 4) ──────────────────────────
+    getProductTypes(inst) {
+      const types = new Set();
+      for (const p of inst.products) {
+        const nm = (p.name || '').toUpperCase();
+        if (/QDII|海外|全球|美国|港股通/.test(nm)) types.add('QDII');
+        else if (/货币|现金/.test(nm)) types.add('货币');
+        else if (/债|纯债|信用|利率/.test(nm)) types.add('债券');
+        else if (/股票|指数|ETF|LOF|量化|成长|价值/.test(nm)) types.add('股票');
+        else if (/混合|灵活|平衡|配置|稳健|优选|精选/.test(nm)) types.add('混合');
+        else types.add('其他');
+      }
+      return [...types].sort();
+    },
+
+    classifyProduct(p) {
+      const nm = (p.name || '').toUpperCase();
+      if (/QDII|海外|全球|美国|港股通/.test(nm)) return 'QDII';
+      if (/货币|现金/.test(nm)) return '货币';
+      if (/债|纯债|信用|利率/.test(nm)) return '债券';
+      if (/股票|指数|ETF|LOF|量化|成长|价值/.test(nm)) return '股票';
+      if (/混合|灵活|平衡|配置|稳健|优选|精选/.test(nm)) return '混合';
+      return '其他';
+    },
+
+    // ── Compare (Feature 3) ──────────────────────────────────────
+    toggleCompare(product, event) {
+      if (event.target.checked) {
+        if (this.compareList.length >= 3) {
+          event.target.checked = false;
+          this.showToast('最多选择3只基金进行对比');
+          return;
+        }
+        this.compareList.push(product);
+        this.compareSet.add(product.code);
+      } else {
+        this.compareList = this.compareList.filter(p => p.code !== product.code);
+        this.compareSet.delete(product.code);
+      }
+    },
+    toggleAllCompare(inst, event) {
+      if (event.target.checked) {
+        const filtered = this.filteredProducts(inst).slice(0, 3);
+        this.compareList = [...filtered];
+        this.compareSet = new Set(filtered.map(p => p.code));
+      } else {
+        this.clearCompare();
+      }
+    },
+    isAllCompareChecked(inst) {
+      const filtered = this.filteredProducts(inst);
+      return filtered.length > 0 && filtered.length <= 3 && filtered.every(p => this.compareSet.has(p.code));
+    },
+    clearCompare() {
+      this.compareList = [];
+      this.compareSet = new Set();
+      this.showCompareModal = false;
+      this.compareData = [];
+    },
+    isBestReturn(fund, key) {
+      if (this.compareData.length < 2) return false;
+      const vals = this.compareData.map(f => f.returns && f.returns[key] != null ? parseFloat(f.returns[key]) : -Infinity);
+      const max = Math.max(...vals);
+      if (max === -Infinity) return false;
+      const v = fund.returns && fund.returns[key] != null ? parseFloat(fund.returns[key]) : -Infinity;
+      return v === max;
+    },
+    async showCompareModal_() {
+      this.showCompareModal = true;
+      this.compareLoading = true;
+      this.compareData = [];
+      const results = await Promise.allSettled(
+        this.compareList.map(async p => {
+          const bare = this.bareCode(p.code);
+          if (!this._fundMetaCache) this._fundMetaCache = {};
+          if (this._fundMetaCache[bare]) {
+            return { code: p.code, ...this._fundMetaCache[bare] };
+          }
+          const [meta, apiType] = await Promise.all([
+            fetchFundMeta(bare),
+            fetchFundType(bare)
+          ]);
+          if (apiType) meta.type = apiType;
+          this._fundMetaCache[bare] = meta;
+          return { code: p.code, ...meta };
+        })
+      );
+      this.compareData = results
+        .filter(r => r.status === 'fulfilled')
+        .map(r => r.value);
+      this.compareLoading = false;
     },
 
     // ═══ Import View ═════════════════════════════════════════════
