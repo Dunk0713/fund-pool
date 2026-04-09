@@ -1422,6 +1422,24 @@ function fundgzLookup(bare) {
   return curr;
 }
 
+// ── Fetch fund second-level classification (二级分类) ──────────────────────
+async function fetchFundType(bare) {
+  try {
+    const resp = await fetch(
+      'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNFInfo?plat=Android&appType=ttjj&product=EFund&Version=1&deviceid=1&Fcodes=' + bare
+    );
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    const ftype = json?.Datas?.[0]?.FTYPE;
+    if (typeof ftype === 'string' && ftype.trim()) {
+      return ftype.trim().replace(/基金$/, '');
+    }
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
 // ── Fund metadata fetch (pingzhongdata) ───────────────────────────────────
 const _fundMetaGlobals = [
   'fS_name','fS_code','ishb','syl_1n','syl_6y','syl_3y','syl_1y',
@@ -1766,7 +1784,11 @@ createApp({
         return;
       }
       try {
-        const meta = await fetchFundMeta(bare);
+        const [meta, apiType] = await Promise.all([
+          fetchFundMeta(bare),
+          fetchFundType(bare)
+        ]);
+        if (apiType) meta.type = apiType;
         this._fundMetaCache[bare] = meta;
         if (this.matchedFund && this.bareCode(this.matchedFund.code) === bare) {
           this.fundTags = generateFundTags(meta);
