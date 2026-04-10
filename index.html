@@ -1460,13 +1460,14 @@
           </div>
           <table class="product-table">
             <thead>
-              <tr><th><input type="checkbox" class="compare-check" title="对比" @change="toggleAllCompare(inst, $event)" :checked="isAllCompareChecked(inst)"></th><th>代码</th><th>名称</th><th></th></tr>
+              <tr><th><input type="checkbox" class="compare-check" title="对比" @change="toggleAllCompare(inst, $event)" :checked="isAllCompareChecked(inst)"></th><th>代码</th><th>名称</th><th>分类</th><th></th></tr>
             </thead>
             <tbody>
               <tr v-for="p in filteredProducts(inst)" :key="p.code">
                 <td><input type="checkbox" class="compare-check" :checked="compareSet.has(p.code)" @change="toggleCompare(p, $event)"></td>
                 <td>{{ p.code }}</td>
                 <td>{{ p.name }}</td>
+                <td style="color:#6b7280;font-size:12px;">{{ p.type || '--' }}</td>
                 <td>
                   <button class="icon-btn danger" @click="removeProduct(inst, p.code)" style="width:28px;height:28px;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1481,6 +1482,13 @@
             <input v-model="newProductCode" placeholder="如005787.OF或005787" style="max-width:120px;">
             <input v-model="newProductName" placeholder="名称">
             <button class="btn btn-primary btn-sm" @click="addProduct(inst)">添加</button>
+            <button
+              v-if="inst.products.some(p => !p.type)"
+              class="btn btn-sm"
+              style="margin-left:auto;font-size:12px;color:var(--primary);border:1px solid var(--primary);background:transparent;"
+              :disabled="backfillLoading"
+              @click="backfillTypes(inst)"
+            >{{ backfillLoading ? '补全中...' : '补全分类 (' + inst.products.filter(p => !p.type).length + ')' }}</button>
           </div>
         </div>
       </div>
@@ -2153,8 +2161,7 @@ function generateFundTags(meta) {
   if (meta.scale != null) {
     const size = parseFloat(meta.scale);
     if (!isNaN(size)) {
-      const sizeLabel = size >= 100 ? (size / 100).toFixed(0) + '百亿'
-        : size >= 1 ? size.toFixed(2) + '亿'
+      const sizeLabel = size >= 1 ? size.toFixed(2) + '亿'
         : (size * 10000).toFixed(0) + '万';
       const color = size >= 100 ? 'gold' : size >= 50 ? 'amber' : size < 2 ? 'orange' : 'gray';
       tags.push({ label: '规模 ' + sizeLabel, color });
@@ -2241,6 +2248,9 @@ createApp({
 
       // Fund detail
       fundDetail: null,
+
+      // Manage - backfill
+      backfillLoading: false,
 
       // Manage - pool stats
       poolStatsInst: null,
@@ -2533,12 +2543,45 @@ createApp({
         this.showToast('该代码已存在');
         return;
       }
-      inst.products.push({ code, name });
+      // Fetch fund type (二级分类) at add time and persist with product
+      const bare = this.bareCode(code);
+      let fundType = null;
+      try {
+        fundType = await fetchFundType(bare);
+      } catch (_) {}
+      const product = { code, name };
+      if (fundType) product.type = fundType;
+      inst.products.push(product);
       inst.updatedAt = new Date().toISOString();
       await this.saveInst(inst);
       this.newProductCode = '';
       this.newProductName = '';
       this.showToast('产品已添加');
+    },
+
+    async backfillTypes(inst) {
+      const missing = inst.products.filter(p => !p.type);
+      if (missing.length === 0) return;
+      this.backfillLoading = true;
+      let filled = 0;
+      // Process in batches of 5 to avoid overwhelming the API
+      for (let i = 0; i < missing.length; i += 5) {
+        const batch = missing.slice(i, i + 5);
+        const results = await Promise.allSettled(
+          batch.map(p => fetchFundType(this.bareCode(p.code)))
+        );
+        for (let j = 0; j < batch.length; j++) {
+          const res = results[j];
+          if (res.status === 'fulfilled' && res.value) {
+            batch[j].type = res.value;
+            filled++;
+          }
+        }
+      }
+      inst.updatedAt = new Date().toISOString();
+      await this.saveInst(inst);
+      this.backfillLoading = false;
+      this.showToast(`分类补全完成：${filled}/${missing.length} 成功`);
     },
 
     async removeProduct(inst, code) {
@@ -2574,12 +2617,8 @@ createApp({
       const colorMap = { '股票': '#3b82f6', '混合': '#8b5cf6', '债券': '#10b981', '货币': '#f59e0b', 'QDII': '#ec4899', '其他': '#9ca3af' };
       const clsMap = { '股票': 'stock', '混合': 'mixed', '债券': 'bond', '货币': 'money', 'QDII': 'qdii', '其他': 'other' };
       for (const p of inst.products) {
-        const nm = (p.name || '').toUpperCase();
-        if (/QDII|海外|全球|美国|港股通/.test(nm)) typeMap['QDII']++;
-        else if (/货币|现金/.test(nm)) typeMap['货币']++;
-        else if (/债|纯债|信用|利率/.test(nm)) typeMap['债券']++;
-        else if (/股票|指数|ETF|LOF|量化|成长|价值/.test(nm)) typeMap['股票']++;
-        else if (/混合|灵活|平衡|配置|稳健|优选|精选/.test(nm)) typeMap['混合']++;
+        const cls = this.classifyProduct(p);
+        if (cls in typeMap) typeMap[cls]++;
         else typeMap['其他']++;
       }
       const total = inst.products.length || 1;
@@ -2633,18 +2672,23 @@ createApp({
     getProductTypes(inst) {
       const types = new Set();
       for (const p of inst.products) {
-        const nm = (p.name || '').toUpperCase();
-        if (/QDII|海外|全球|美国|港股通/.test(nm)) types.add('QDII');
-        else if (/货币|现金/.test(nm)) types.add('货币');
-        else if (/债|纯债|信用|利率/.test(nm)) types.add('债券');
-        else if (/股票|指数|ETF|LOF|量化|成长|价值/.test(nm)) types.add('股票');
-        else if (/混合|灵活|平衡|配置|稳健|优选|精选/.test(nm)) types.add('混合');
-        else types.add('其他');
+        types.add(this.classifyProduct(p));
       }
       return [...types].sort();
     },
 
     classifyProduct(p) {
+      // Use persisted fund type (二级分类) if available
+      if (p.type) {
+        const t = p.type;
+        if (/QDII|海外|全球/.test(t)) return 'QDII';
+        if (/货币/.test(t)) return '货币';
+        if (/债/.test(t)) return '债券';
+        if (/股票|指数/.test(t)) return '股票';
+        if (/混合|灵活|平衡|偏股|偏债/.test(t)) return '混合';
+        return '其他';
+      }
+      // Fallback: name-based heuristic
       const nm = (p.name || '').toUpperCase();
       if (/QDII|海外|全球|美国|港股通/.test(nm)) return 'QDII';
       if (/货币|现金/.test(nm)) return '货币';
@@ -3082,14 +3126,27 @@ createApp({
       const existingCodes = new Set(target.products.map(p => p.code));
       let added = 0, skipped = 0;
 
+      const newProducts = [];
       for (const p of selected) {
         if (existingCodes.has(p.code)) {
           skipped++;
         } else {
-          target.products.push({ code: p.code.trim(), name: p.name.trim().replace(/\s+/g, '') });
+          newProducts.push(p);
           existingCodes.add(p.code);
           added++;
         }
+      }
+
+      // Batch fetch fund types for new products
+      const typeResults = await Promise.allSettled(
+        newProducts.map(p => fetchFundType(this.bareCode(p.code)))
+      );
+      for (let i = 0; i < newProducts.length; i++) {
+        const p = newProducts[i];
+        const product = { code: p.code.trim(), name: p.name.trim().replace(/\s+/g, '') };
+        const typeRes = typeResults[i];
+        if (typeRes.status === 'fulfilled' && typeRes.value) product.type = typeRes.value;
+        target.products.push(product);
       }
 
       target.updatedAt = new Date().toISOString();
