@@ -2153,11 +2153,11 @@ function generateFundTags(meta) {
   if (meta.scale != null) {
     const size = parseFloat(meta.scale);
     if (!isNaN(size)) {
-      if (size >= 100) tags.push({ label: '百亿规模', color: 'gold' });
-      else if (size >= 50) tags.push({ label: '50亿+', color: 'amber' });
-      else if (size >= 10) tags.push({ label: '10亿+', color: 'gray' });
-      else if (size >= 2) tags.push({ label: '2-10亿', color: 'gray' });
-      else tags.push({ label: '迷你基金', color: 'orange' });
+      const sizeLabel = size >= 100 ? (size / 100).toFixed(0) + '百亿'
+        : size >= 1 ? size.toFixed(2) + '亿'
+        : (size * 10000).toFixed(0) + '万';
+      const color = size >= 100 ? 'gold' : size >= 50 ? 'amber' : size < 2 ? 'orange' : 'gray';
+      tags.push({ label: '规模 ' + sizeLabel, color });
     }
   }
   // 3. Fund manager
