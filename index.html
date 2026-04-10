@@ -2000,11 +2000,11 @@ function fundgzLookup(bare) {
 async function fetchFundType(bare) {
   try {
     const resp = await fetch(
-      'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNFInfo?plat=Android&appType=ttjj&product=EFund&Version=1&deviceid=1&Fcodes=' + bare
+      'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNBasicInformation?plat=Android&appType=ttjj&product=EFund&Version=1&deviceid=1&FCODE=' + bare
     );
     if (!resp.ok) return null;
     const json = await resp.json();
-    const ftype = json?.Datas?.[0]?.FTYPE;
+    const ftype = json?.Datas?.FTYPE;
     if (typeof ftype === 'string' && ftype.trim()) {
       return ftype.trim().replace(/基金$/, '');
     }
