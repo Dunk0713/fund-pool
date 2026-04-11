@@ -1997,41 +1997,73 @@ function fundgzLookup(bare) {
 }
 
 // ── Fund type dictionary (二级分类) via fundcode_search.js ──────────────────
+// Cached in IndexedDB with 24h TTL to avoid re-downloading ~200KB on every page load.
 let _fundTypeMap = null;
 let _fundTypeMapPromise = null;
+const _FUND_TYPE_CACHE_KEY = 'fundTypeMapCache';
+const _FUND_TYPE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+async function _readCachedTypeMap() {
+  try {
+    const raw = localStorage.getItem(_FUND_TYPE_CACHE_KEY);
+    if (!raw) return null;
+    const { ts, data } = JSON.parse(raw);
+    if (Date.now() - ts > _FUND_TYPE_TTL) { localStorage.removeItem(_FUND_TYPE_CACHE_KEY); return null; }
+    return new Map(data);
+  } catch (_) { return null; }
+}
+
+function _writeCachedTypeMap(map) {
+  try {
+    const data = [...map.entries()];
+    localStorage.setItem(_FUND_TYPE_CACHE_KEY, JSON.stringify({ ts: Date.now(), data }));
+  } catch (_) { /* quota exceeded — ignore */ }
+}
+
 function _loadFundTypeMap() {
   if (_fundTypeMapPromise) return _fundTypeMapPromise;
-  _fundTypeMapPromise = new Promise((resolve) => {
-    const script = document.createElement('script');
-    script.src = 'https://fund.eastmoney.com/js/fundcode_search.js?v=' + Date.now();
-    script.onload = () => {
-      const arr = window.r;
-      if (Array.isArray(arr)) {
-        _fundTypeMap = new Map();
-        for (const item of arr) _fundTypeMap.set(item[0], item[3]);
-      }
-      try { delete window.r; } catch (_) {}
-      script.remove();
-      resolve();
-    };
-    script.onerror = () => { script.remove(); resolve(); };
-    document.head.appendChild(script);
-  });
+  _fundTypeMapPromise = (async () => {
+    // 1. Try localStorage cache first
+    const cached = await _readCachedTypeMap();
+    if (cached && cached.size > 0) { _fundTypeMap = cached; return; }
+    // 2. Load from remote via script tag
+    await new Promise((resolve) => {
+      const script = document.createElement('script');
+      script.src = 'https://fund.eastmoney.com/js/fundcode_search.js?v=' + Date.now();
+      script.onload = () => {
+        const arr = window.r;
+        if (Array.isArray(arr)) {
+          _fundTypeMap = new Map();
+          for (const item of arr) _fundTypeMap.set(item[0], item[3]);
+          _writeCachedTypeMap(_fundTypeMap);
+        }
+        try { delete window.r; } catch (_) {}
+        script.remove();
+        resolve();
+      };
+      script.onerror = () => { script.remove(); resolve(); };
+      document.head.appendChild(script);
+    });
+  })();
   return _fundTypeMapPromise;
 }
-async function fetchFundType(bare) {
-  try {
-    await _loadFundTypeMap();
-    if (_fundTypeMap) {
-      const ftype = _fundTypeMap.get(bare);
-      if (typeof ftype === 'string' && ftype.trim()) {
-        return ftype.trim().replace(/基金$/, '');
-      }
-    }
-    return null;
-  } catch (_) {
+
+// Preload on page init — don't wait for first query
+_loadFundTypeMap();
+
+function fetchFundType(bare) {
+  if (_fundTypeMap) {
+    const ftype = _fundTypeMap.get(bare);
+    if (typeof ftype === 'string' && ftype.trim()) return ftype.trim().replace(/基金$/, '');
     return null;
   }
+  // Map not ready yet — return promise
+  return _loadFundTypeMap().then(() => {
+    if (!_fundTypeMap) return null;
+    const ftype = _fundTypeMap.get(bare);
+    if (typeof ftype === 'string' && ftype.trim()) return ftype.trim().replace(/基金$/, '');
+    return null;
+  });
 }
 
 // ── Fetch fund top holdings (前十大持仓) ──────────────────────────────────
@@ -2501,6 +2533,13 @@ createApp({
       this.productSearchText = '';
       this.productTypeFilter = '';
       this.clearCompare();
+      // Auto-backfill types when expanding if any products are missing type
+      if (this.expandedInst === id) {
+        const inst = this.institutions.find(i => i.id === id);
+        if (inst && inst.products.some(p => !p.type)) {
+          this.backfillTypes(inst);
+        }
+      }
     },
 
     filteredProducts(inst) {
@@ -2583,23 +2622,18 @@ createApp({
       const missing = inst.products.filter(p => !p.type);
       if (missing.length === 0) return;
       this.backfillLoading = true;
+      await _loadFundTypeMap(); // ensure map is ready
       let filled = 0;
-      // Process in batches of 5 to avoid overwhelming the API
-      for (let i = 0; i < missing.length; i += 5) {
-        const batch = missing.slice(i, i + 5);
-        const results = await Promise.allSettled(
-          batch.map(p => fetchFundType(this.bareCode(p.code)))
-        );
-        for (let j = 0; j < batch.length; j++) {
-          const res = results[j];
-          if (res.status === 'fulfilled' && res.value) {
-            batch[j].type = res.value;
-            filled++;
-          }
-        }
+      for (const p of missing) {
+        const t = fetchFundType(this.bareCode(p.code));
+        // fetchFundType returns sync when map is ready
+        const type = t instanceof Promise ? await t : t;
+        if (type) { p.type = type; filled++; }
       }
-      inst.updatedAt = new Date().toISOString();
-      await this.saveInst(inst);
+      if (filled > 0) {
+        inst.updatedAt = new Date().toISOString();
+        await this.saveInst(inst);
+      }
       this.backfillLoading = false;
       this.showToast(`分类补全完成：${filled}/${missing.length} 成功`);
     },
@@ -3157,15 +3191,13 @@ createApp({
         }
       }
 
-      // Batch fetch fund types for new products
-      const typeResults = await Promise.allSettled(
-        newProducts.map(p => fetchFundType(this.bareCode(p.code)))
-      );
-      for (let i = 0; i < newProducts.length; i++) {
-        const p = newProducts[i];
+      // Assign fund types from preloaded map (sync when map is ready)
+      await _loadFundTypeMap();
+      for (const p of newProducts) {
         const product = { code: p.code.trim(), name: p.name.trim().replace(/\s+/g, '') };
-        const typeRes = typeResults[i];
-        if (typeRes.status === 'fulfilled' && typeRes.value) product.type = typeRes.value;
+        const type = fetchFundType(this.bareCode(p.code));
+        const resolved = type instanceof Promise ? await type : type;
+        if (resolved) product.type = resolved;
         target.products.push(product);
       }
 
