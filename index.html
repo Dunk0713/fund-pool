@@ -1996,17 +1996,37 @@ function fundgzLookup(bare) {
   return curr;
 }
 
-// ── Fetch fund second-level classification (二级分类) ──────────────────────
+// ── Fund type dictionary (二级分类) via fundcode_search.js ──────────────────
+let _fundTypeMap = null;
+let _fundTypeMapPromise = null;
+function _loadFundTypeMap() {
+  if (_fundTypeMapPromise) return _fundTypeMapPromise;
+  _fundTypeMapPromise = new Promise((resolve) => {
+    const script = document.createElement('script');
+    script.src = 'https://fund.eastmoney.com/js/fundcode_search.js?v=' + Date.now();
+    script.onload = () => {
+      const arr = window.r;
+      if (Array.isArray(arr)) {
+        _fundTypeMap = new Map();
+        for (const item of arr) _fundTypeMap.set(item[0], item[3]);
+      }
+      try { delete window.r; } catch (_) {}
+      script.remove();
+      resolve();
+    };
+    script.onerror = () => { script.remove(); resolve(); };
+    document.head.appendChild(script);
+  });
+  return _fundTypeMapPromise;
+}
 async function fetchFundType(bare) {
   try {
-    const resp = await fetch(
-      'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNBasicInformation?plat=Android&appType=ttjj&product=EFund&Version=1&deviceid=1&FCODE=' + bare
-    );
-    if (!resp.ok) return null;
-    const json = await resp.json();
-    const ftype = json?.Datas?.FTYPE;
-    if (typeof ftype === 'string' && ftype.trim()) {
-      return ftype.trim().replace(/基金$/, '');
+    await _loadFundTypeMap();
+    if (_fundTypeMap) {
+      const ftype = _fundTypeMap.get(bare);
+      if (typeof ftype === 'string' && ftype.trim()) {
+        return ftype.trim().replace(/基金$/, '');
+      }
     }
     return null;
   } catch (_) {
