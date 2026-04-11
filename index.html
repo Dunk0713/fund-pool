@@ -74,28 +74,31 @@
       align-items: center;
       justify-content: space-between;
     }
+    .header-title {
+      min-width: 0;
+    }
     .header h1 {
-      font-size: 18px;
-      font-weight: 600;
+      font-size: 16px;
+      font-weight: 700;
       color: var(--text);
       letter-spacing: -0.3px;
+      line-height: 1.2;
     }
     .header h1 span {
       color: var(--primary);
     }
+    .header-subtitle {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 1px;
+    }
     .header-right {
       display: flex;
       align-items: center;
-      gap: 12px;
-      font-size: 13px;
-      color: var(--text-secondary);
+      gap: 8px;
+      flex-shrink: 0;
     }
-    .header-user {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .header-user .avatar {
+    .header .avatar {
       width: 28px;
       height: 28px;
       border-radius: 50%;
@@ -156,7 +159,11 @@
       transition: color var(--transition);
       -webkit-tap-highlight-color: transparent;
     }
-    .nav-item.active { color: var(--primary); }
+    .nav-item.active {
+      color: var(--primary);
+      background: var(--primary-light);
+      border-radius: 12px;
+    }
     .nav-item svg { width: 24px; height: 24px; }
 
     /* ═══════════════════════════════════════════════════════════════
@@ -629,11 +636,16 @@
     /* ── Type Filter Chips ───────────────────────────────────── */
     .filter-chips {
       display: flex;
-      flex-wrap: wrap;
       gap: 6px;
       margin-top: 8px;
       margin-bottom: 4px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      padding-bottom: 2px;
     }
+    .filter-chips::-webkit-scrollbar { display: none; }
+    .filter-chip { flex-shrink: 0; }
     .filter-chip {
       padding: 4px 12px;
       border-radius: 16px;
@@ -852,35 +864,72 @@
 
     /* ── 3.6 Tables ────────────────────────────────────────────── */
     .product-section {
-      padding: 0 20px 16px;
+      padding: 4px 20px 16px;
       border-top: 1px solid var(--border);
     }
-    .product-table {
-      width: 100%;
-      margin-top: 12px;
-      font-size: 14px;
-    }
-    .product-table th {
-      text-align: left;
+    .product-list-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       padding: 8px 0;
-      font-weight: 500;
-      color: var(--text-secondary);
-      font-size: 12px;
+      margin-top: 8px;
       border-bottom: 1px solid var(--border);
     }
-    .product-table td {
+    .compare-all-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+    .product-count-label {
+      font-size: 12px;
+      color: var(--text-tertiary);
+    }
+    .product-list {
+      margin-top: 4px;
+    }
+    .product-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       padding: 10px 0;
       border-bottom: 1px solid #f3f4f6;
     }
-    .product-table td:first-child {
+    .product-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .product-main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+    .product-code {
       font-variant-numeric: tabular-nums;
       color: var(--primary);
       font-weight: 500;
-      width: 100px;
+      font-size: 13px;
+      flex-shrink: 0;
     }
-    .product-table td:last-child {
-      width: 40px;
-      text-align: center;
+    .product-name {
+      font-size: 13px;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .product-type {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      flex-shrink: 0;
+      white-space: nowrap;
     }
     .add-product-row {
       display: flex;
@@ -1112,10 +1161,16 @@
     ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
 
     /* ── 4.4 Desktop / Responsive ──────────────────────────────── */
+    @media (max-width: 400px) {
+      .returns-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
     @media (min-width: 640px) {
       .container { padding: 24px; }
       .header { padding: 20px 24px; }
-      .header h1 { font-size: 20px; }
+      .header h1 { font-size: 18px; }
+      .header-subtitle { font-size: 13px; }
     }
 
     /* ── 4.5 Login Page ────────────────────────────────────────── */
@@ -1205,12 +1260,12 @@
 
     <!-- Header with user info & logout -->
     <div class="header">
-      <h1><span>中欧基金</span> · 机构产品池查询</h1>
+      <div class="header-title">
+        <h1><span>中欧基金</span></h1>
+        <div class="header-subtitle">产品池查询</div>
+      </div>
       <div class="header-right">
-        <div class="header-user">
-          <div class="avatar">Z</div>
-          <span>已登录</span>
-        </div>
+        <div class="avatar">Z</div>
         <button class="logout-btn" @click="handleLogout">退出</button>
       </div>
     </div>
@@ -1242,6 +1297,16 @@
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- Empty state guide -->
+      <div class="empty-state" v-if="!selectedInstitution && institutions.length > 0">
+        <div class="empty-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text-tertiary)">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+        </div>
+        <p>请先选择机构客户<br>然后输入基金代码或名称查询</p>
       </div>
 
       <!-- Fund Query -->
@@ -1458,26 +1523,30 @@
               @click="productTypeFilter = productTypeFilter === t ? '' : t"
             >{{ t }}</button>
           </div>
-          <table class="product-table">
-            <thead>
-              <tr><th><input type="checkbox" class="compare-check" title="对比" @change="toggleAllCompare(inst, $event)" :checked="isAllCompareChecked(inst)"></th><th>代码</th><th>名称</th><th>分类</th><th></th></tr>
-            </thead>
-            <tbody>
-              <tr v-for="p in filteredProducts(inst)" :key="p.code">
-                <td><input type="checkbox" class="compare-check" :checked="compareSet.has(p.code)" @change="toggleCompare(p, $event)"></td>
-                <td>{{ p.code }}</td>
-                <td>{{ p.name }}</td>
-                <td style="color:#6b7280;font-size:12px;">{{ p.type || '--' }}</td>
-                <td>
-                  <button class="icon-btn danger" @click="removeProduct(inst, p.code)" style="width:28px;height:28px;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="product-list-header">
+            <label class="compare-all-label">
+              <input type="checkbox" class="compare-check" title="对比" @change="toggleAllCompare(inst, $event)" :checked="isAllCompareChecked(inst)">
+              <span>全选对比</span>
+            </label>
+            <span class="product-count-label">{{ filteredProducts(inst).length }} 只</span>
+          </div>
+          <div class="product-list">
+            <div class="product-item" v-for="p in filteredProducts(inst)" :key="p.code">
+              <input type="checkbox" class="compare-check" :checked="compareSet.has(p.code)" @change="toggleCompare(p, $event)">
+              <div class="product-info">
+                <div class="product-main">
+                  <span class="product-code">{{ bareCode(p.code) }}</span>
+                  <span class="product-name">{{ p.name }}</span>
+                </div>
+                <span class="product-type">{{ p.type || '--' }}</span>
+              </div>
+              <button class="icon-btn danger" @click="removeProduct(inst, p.code)" style="width:28px;height:28px;flex-shrink:0;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+          </div>
           <div class="add-product-row">
             <input v-model="newProductCode" placeholder="如005787.OF或005787" style="max-width:120px;">
             <input v-model="newProductName" placeholder="名称">
