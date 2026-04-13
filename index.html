@@ -1539,6 +1539,7 @@
                   <span class="product-name">{{ p.name }}</span>
                 </div>
                 <span class="product-type">{{ p.type || '--' }}</span>
+                <span v-if="p.manager" style="font-size:12px;color:var(--text-secondary);margin-left:6px;">{{ p.manager }}</span>
               </div>
               <button class="icon-btn danger" @click="removeProduct(inst, p.code)" style="width:28px;height:28px;flex-shrink:0;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1558,6 +1559,13 @@
               :disabled="backfillLoading"
               @click="backfillTypes(inst)"
             >{{ backfillLoading ? '补全中...' : '补全分类 (' + inst.products.filter(p => !p.type).length + ')' }}</button>
+            <button
+              v-if="inst.products.some(p => !p.manager)"
+              class="btn btn-sm"
+              style="margin-left:4px;font-size:12px;color:var(--primary);border:1px solid var(--primary);background:transparent;"
+              :disabled="backfillManagerLoading"
+              @click="backfillManagers(inst)"
+            >{{ backfillManagerLoading ? ('补全中 ' + backfillManagerProgress + '...') : '补全经理 (' + inst.products.filter(p => !p.manager).length + ')' }}</button>
           </div>
         </div>
       </div>
@@ -2268,6 +2276,13 @@ function fetchFundMeta(bare) {
   return curr;
 }
 
+function extractManagerNames(meta) {
+  if (meta && meta.managerDetails && meta.managerDetails.length > 0) {
+    return meta.managerDetails.map(m => m.name).filter(Boolean).join('、');
+  }
+  return null;
+}
+
 // ── Generate fund characteristic tags ─────────────────────────────────────
 function generateFundTags(meta) {
   const tags = [];
@@ -2372,6 +2387,8 @@ createApp({
 
       // Manage - backfill
       backfillLoading: false,
+      backfillManagerLoading: false,
+      backfillManagerProgress: '',
 
       // Manage - pool stats
       poolStatsInst: null,
@@ -2520,8 +2537,9 @@ createApp({
       for (const p of this.selectedInstitution.products) {
         const nameMatch = fuzzyMatch(this.fundQuery.trim(), p.name);
         const codeMatch = fuzzyMatch(q, p.code);
-        const bestScore = Math.max(nameMatch.score, codeMatch.score);
-        if (nameMatch.match || codeMatch.match) {
+        const mgrMatch = p.manager ? fuzzyMatch(this.fundQuery.trim(), p.manager) : { match: false, score: 0 };
+        const bestScore = Math.max(nameMatch.score, codeMatch.score, mgrMatch.score);
+        if (nameMatch.match || codeMatch.match || mgrMatch.match) {
           results.push({ ...p, score: bestScore });
         }
       }
@@ -2608,6 +2626,9 @@ createApp({
         if (inst && inst.products.some(p => !p.type)) {
           this.backfillTypes(inst);
         }
+        if (inst && inst.products.some(p => !p.manager)) {
+          this.backfillManagers(inst);
+        }
       }
     },
 
@@ -2619,7 +2640,8 @@ createApp({
       if (!this.productSearchText.trim()) return list;
       return list.filter(p =>
         fuzzyMatch(this.productSearchText, p.name).match ||
-        fuzzyMatch(this.productSearchText, p.code).match
+        fuzzyMatch(this.productSearchText, p.code).match ||
+        (p.manager && fuzzyMatch(this.productSearchText, p.manager).match)
       );
     },
 
@@ -2671,14 +2693,22 @@ createApp({
         this.showToast('该代码已存在');
         return;
       }
-      // Fetch fund type (二级分类) at add time and persist with product
+      // Fetch fund meta (type + manager) at add time and persist with product
       const bare = this.bareCode(code);
       let fundType = null;
+      let manager = null;
       try {
-        fundType = await fetchFundType(bare);
-      } catch (_) {}
+        const meta = await fetchFundMeta(bare);
+        if (meta) {
+          fundType = meta.type;
+          manager = extractManagerNames(meta);
+        }
+      } catch (_) {
+        try { fundType = await fetchFundType(bare); } catch (_) {}
+      }
       const product = { code, name };
       if (fundType) product.type = fundType;
+      if (manager) product.manager = manager;
       inst.products.push(product);
       inst.updatedAt = new Date().toISOString();
       await this.saveInst(inst);
@@ -2705,6 +2735,31 @@ createApp({
       }
       this.backfillLoading = false;
       this.showToast(`分类补全完成：${filled}/${missing.length} 成功`);
+    },
+
+    async backfillManagers(inst) {
+      const missing = inst.products.filter(p => !p.manager);
+      if (missing.length === 0) return;
+      this.backfillManagerLoading = true;
+      this.backfillManagerProgress = `0/${missing.length}`;
+      let filled = 0;
+      for (let i = 0; i < missing.length; i++) {
+        const p = missing[i];
+        this.backfillManagerProgress = `${i + 1}/${missing.length}`;
+        try {
+          const meta = await fetchFundMeta(this.bareCode(p.code));
+          const names = extractManagerNames(meta);
+          if (names) { p.manager = names; filled++; }
+          if (!p.type && meta && meta.type) { p.type = meta.type; }
+        } catch (_) {}
+      }
+      if (filled > 0) {
+        inst.updatedAt = new Date().toISOString();
+        await this.saveInst(inst);
+      }
+      this.backfillManagerLoading = false;
+      this.backfillManagerProgress = '';
+      this.showToast(`经理补全完成：${filled}/${missing.length} 成功`);
     },
 
     async removeProduct(inst, code) {
