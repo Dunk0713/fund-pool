@@ -1,0 +1,32 @@
+name: Keep Supabase Alive
+
+# 定时向 Supabase 发请求，防止免费版项目因 7 天无活动被自动暂停
+# 触发条件：每 3 天北京时间早上 8 点自动执行；也可以在 Actions 页面手动触发
+
+on:
+  schedule:
+    # cron 使用 UTC 时间，北京时间 08:00 = UTC 00:00
+    # 每 3 天执行一次：分 时 日 月 周
+    - cron: '0 0 */3 * *'
+  workflow_dispatch:  # 支持手动触发
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API
+        run: |
+          echo "Pinging Supabase at $(date -u)..."
+          HTTP_CODE=$(curl -s -o /tmp/response.txt -w "%{http_code}" \
+            "https://rghlkwmarqfyksaztang.supabase.co/rest/v1/institutions?select=id&limit=1" \
+            -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJnaGxrd21hcnFmeWtzYXp0YW5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwODk5MTcsImV4cCI6MjA4OTY2NTkxN30.cbwWMVYhPpOuqFcU1ZzvB0Y_S7tqK_E8tBJMBwGebis" \
+            -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJnaGxrd21hcnFmeWtzYXp0YW5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwODk5MTcsImV4cCI6MjA4OTY2NTkxN30.cbwWMVYhPpOuqFcU1ZzvB0Y_S7tqK_E8tBJMBwGebis")
+          echo "HTTP status: $HTTP_CODE"
+          echo "Response: $(cat /tmp/response.txt)"
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✅ Supabase is alive"
+            exit 0
+          else
+            echo "❌ Ping failed with status $HTTP_CODE"
+            exit 1
+          fi
