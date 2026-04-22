@@ -1553,6 +1553,20 @@
     .print-header { display: none; }
 
     /* ═══════════════════════════════════════════════════════════════
+       M4 · Accessibility
+       ═══════════════════════════════════════════════════════════════ */
+    input:focus-visible,
+    button:focus-visible,
+    a:focus-visible,
+    [tabindex]:focus-visible {
+      outline: 2px solid var(--brand-ink);
+      outline-offset: 2px;
+      border-radius: var(--r-sm);
+    }
+    /* 鼠标点击时不显示焦点环，仅键盘导航显示 */
+    button:focus:not(:focus-visible) { outline: none; }
+
+    /* ═══════════════════════════════════════════════════════════════
        M3 · Manager tab / chip bar / comparison
        ═══════════════════════════════════════════════════════════════ */
 
@@ -3497,6 +3511,7 @@ createApp({
       this.instSearchText = inst.name;
       this.showInstDropdown = false;
       this.fundQuery = '';
+      this.quickFilter = 'all';
       this.queryResult = null;
       this.resultVisible = false;
       this.fundSuggestions = [];
@@ -3506,6 +3521,37 @@ createApp({
       nextTick(() => {
         if (this.$refs.fundInput) this.$refs.fundInput.focus();
       });
+      // M4 · idle-time index build for fast lookup on large pools
+      this._buildInstIndex(inst);
+    },
+
+    // ── M4: 搜索索引（code hashmap + 2-gram 倒排） ──────────────
+    _buildInstIndex(inst) {
+      if (!inst) return;
+      const run = () => {
+        try {
+          const codeMap = new Map();
+          const nameGrams = new Map(); // 2-gram → Set<productCode>
+          for (const p of (inst.products || [])) {
+            const code = String(p.code || '').trim();
+            if (code) codeMap.set(normalizeCode(code), p);
+            const nm = String(p.name || '').toLowerCase();
+            for (let i = 0; i < nm.length - 1; i++) {
+              const g = nm.slice(i, i + 2);
+              if (!nameGrams.has(g)) nameGrams.set(g, new Set());
+              nameGrams.get(g).add(code);
+            }
+          }
+          inst._searchIndex = { codeMap, nameGrams };
+        } catch (e) {
+          console.warn('build index failed', e);
+        }
+      };
+      if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(run, { timeout: 500 });
+      } else {
+        setTimeout(run, 50);
+      }
     },
 
     onFundQueryInput() {
@@ -3528,6 +3574,15 @@ createApp({
       }
       const now = Date.now();
       const q = hasQ ? normalizeCode(this.fundQuery.trim()) : '';
+      // M4 · 纯数字代码走 O(1) 索引命中路径
+      if (hasQ && /^\d{3,6}$/.test(q) && filter === 'all'
+          && this.selectedInstitution._searchIndex) {
+        const hit = this.selectedInstitution._searchIndex.codeMap.get(q);
+        if (hit) {
+          this.fundSuggestions = [{ ...hit, score: 1000 }];
+          return;
+        }
+      }
       const results = [];
       for (const p of this.selectedInstitution.products) {
         // 先应用 quickFilter
