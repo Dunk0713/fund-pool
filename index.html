@@ -509,6 +509,44 @@
       overflow: hidden;
       animation: fadeInUp 0.3s ease forwards;
     }
+    /* 顶部 risk badges + 数据时效 */
+    .fund-detail-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--sp-3);
+      padding: var(--sp-3) var(--sp-4);
+      border-bottom: 1px solid var(--ink-200);
+      background: var(--ink-050);
+    }
+    .risk-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--sp-1);
+      flex: 1;
+      min-width: 0;
+    }
+    .risk-badge {
+      display: inline-flex;
+      align-items: center;
+      height: 20px;
+      padding: 0 8px;
+      border-radius: var(--r-sm);
+      background: var(--warn-soft);
+      color: var(--warn);
+      font-size: var(--fs-xs);
+      line-height: 20px;
+      white-space: nowrap;
+      border: 1px solid rgba(180, 106, 0, 0.2);
+      cursor: default;
+    }
+    .data-asof {
+      font-size: var(--fs-xs);
+      color: var(--ink-500);
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+      padding-top: 2px;
+    }
     .fund-detail-section {
       padding: 16px;
       border-bottom: 1px solid var(--border);
@@ -1473,6 +1511,108 @@
       min-height: 20px;
     }
     .login-card .btn { width: 100%; }
+    /* ═══════════════════════════════════════════════════════════════
+       M2 · Export menu + Print styles
+       ═══════════════════════════════════════════════════════════════ */
+    .export-menu-wrap {
+      position: relative;
+      display: inline-block;
+    }
+    .export-menu {
+      position: absolute;
+      top: calc(100% + 4px);
+      right: 0;
+      min-width: 176px;
+      background: var(--paper);
+      border: 1px solid var(--ink-200);
+      border-radius: var(--r-md);
+      box-shadow: var(--sh-2);
+      padding: 4px;
+      z-index: 50;
+      animation: fadeInUp 0.14s ease forwards;
+    }
+    .export-menu-item {
+      display: block;
+      width: 100%;
+      padding: 8px 12px;
+      background: none;
+      border: none;
+      text-align: left;
+      font-size: var(--fs-sm);
+      color: var(--ink-800);
+      cursor: pointer;
+      border-radius: var(--r-sm);
+      font-family: inherit;
+    }
+    .export-menu-item:hover {
+      background: var(--brand-tint);
+      color: var(--brand-ink);
+    }
+
+    /* Print-only header (hidden on screen, shown when printing) */
+    .print-header { display: none; }
+
+    /* ── @media print ──────────────────────────────────────────────
+       Chrome/Edge 友好；仅打印当前 inst-card
+       ───────────────────────────────────────────────────────────── */
+    @media print {
+      @page { margin: 1.4cm 1cm; }
+      body {
+        background: #fff !important;
+        color: #000 !important;
+      }
+      /* 隐藏所有导航、按钮、toast、合规条、登录页面等 */
+      .header,
+      .bottom-nav,
+      .compliance-bar,
+      .toast,
+      .inst-actions,
+      .inst-card .pool-stats,
+      .toolbar,
+      .empty-state,
+      .fund-detail-card,
+      .result-card,
+      .suggestions,
+      .input-group,
+      .container > *:not(.inst-card) {
+        display: none !important;
+      }
+      /* 只显示正在打印的 inst-card */
+      .inst-card:not(.print-target) { display: none !important; }
+      .inst-card.print-target {
+        box-shadow: none !important;
+        border: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        break-inside: avoid;
+      }
+      .inst-card.print-target .inst-header {
+        border-bottom: 1px solid #999;
+        cursor: default;
+      }
+      .inst-card.print-target .print-header {
+        display: block !important;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #000;
+      }
+      .print-title {
+        font-size: 16px;
+        font-weight: 700;
+        margin-bottom: 4px;
+      }
+      .print-meta {
+        font-size: 11px;
+        color: #555;
+      }
+      /* 表格样式 — 打印时让产品列表更紧凑 */
+      .product-table,
+      .product-table th,
+      .product-table td {
+        font-size: 11px !important;
+      }
+      #app { padding-bottom: 0 !important; }
+    }
   </style>
 </head>
 <body>
@@ -1619,6 +1759,18 @@
 
       <!-- Fund Detail Card -->
       <div class="fund-detail-card" v-if="queryResult === 'investable' && fundDetail">
+        <!-- Risk Badges + data-as-of -->
+        <div class="fund-detail-header">
+          <div class="risk-badges" v-if="riskBadges.length > 0">
+            <span
+              class="risk-badge"
+              v-for="b in riskBadges"
+              :key="b.label"
+              :title="b.tip"
+            >{{ b.label }}</span>
+          </div>
+          <div class="data-asof" v-if="fundDetail.navDate">数据截至 {{ fundDetail.navDate }}</div>
+        </div>
         <!-- NAV Section -->
         <div class="fund-detail-section">
           <div class="fund-detail-title">最新净值</div>
@@ -1708,18 +1860,40 @@
         <p>暂无机构客户<br>点击上方「+ 新增机构」添加</p>
       </div>
 
-      <div class="inst-card" v-for="inst in institutions" :key="inst.id">
+      <div
+        class="inst-card"
+        v-for="inst in institutions"
+        :key="inst.id"
+        :class="{ 'print-target': printingInstId === inst.id }"
+      >
+        <!-- Print-only header (shown only during window.print() for this inst) -->
+        <div class="print-header" v-if="printingInstId === inst.id">
+          <div class="print-title">中欧基金 · {{ inst.name }} · 产品池清单</div>
+          <div class="print-meta">数据截至 {{ printingDate }} · 共 {{ inst.products.length }} 只产品 · 仅供机构客户内部参考 · 不构成投资建议</div>
+        </div>
         <div class="inst-header" @click="toggleExpand(inst.id)">
           <div>
             <div class="inst-name">{{ inst.name }}</div>
             <div class="inst-meta">{{ inst.products.length }} 只产品</div>
           </div>
           <div class="inst-actions" @click.stop>
-            <button class="icon-btn" @click="loadPoolStats(inst)" title="概览统计" style="color:var(--primary);">
+            <button class="icon-btn" @click="loadPoolStats(inst)" title="概览统计" style="color:var(--brand-ink);">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M18 20V10M12 20V4M6 20v-6"/>
               </svg>
             </button>
+            <div class="export-menu-wrap">
+              <button class="icon-btn" @click="toggleExportMenu(inst, $event)" title="导出" style="color:var(--brand-ink);">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>
+                </svg>
+              </button>
+              <div class="export-menu" v-if="exportMenuInstId === inst.id" @click.stop>
+                <button class="export-menu-item" @click="exportInstitution(inst, 'excel'); closeExportMenu()">导出 Excel</button>
+                <button class="export-menu-item" @click="exportInstitution(inst, 'print'); closeExportMenu()">打印 / 另存 PDF</button>
+                <button class="export-menu-item" @click="exportInstitution(inst, 'markdown'); closeExportMenu()">复制 Markdown 表</button>
+              </div>
+            </div>
             <button class="icon-btn danger" @click="confirmDeleteInst(inst)" title="删除">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14"/>
@@ -2624,6 +2798,12 @@ createApp({
       // Icon set (exposed for templates via v-html)
       ICONS,
 
+      // Export menu state
+      exportMenuInstId: null,
+      printingInstId: null,
+      printingInstName: '',
+      printingDate: '',
+
       // Auth
       authenticated: !!getSession(),
       loginPassword: '',
@@ -2712,6 +2892,10 @@ createApp({
     maxHoldingRatio() {
       if (!this.fundDetail || !this.fundDetail.topHoldings || this.fundDetail.topHoldings.length === 0) return 1;
       return Math.max(...this.fundDetail.topHoldings.map(h => h.ratio), 1);
+    },
+    // 风险徽章 — 基于基金类型/规模/经理/名称派生的合规提示
+    riskBadges() {
+      return this.computeRiskBadges(this.fundDetail, this.matchedFund);
     }
   },
 
@@ -3156,6 +3340,150 @@ createApp({
       if (/股票|指数|ETF|LOF|量化|成长|价值/.test(nm)) return '股票';
       if (/混合|灵活|平衡|配置|稳健|优选|精选/.test(nm)) return '混合';
       return '其他';
+    },
+
+    // ── Risk Badges (M2) ─────────────────────────────────────────
+    // 返回 [{ label, tip }]，基于类型 / 规模 / 经理任职 / 名称派生
+    computeRiskBadges(detail, fund) {
+      const badges = [];
+      if (!detail && !fund) return badges;
+      const type = (detail && detail.type) || (fund && fund.type) || '';
+      const name = (detail && detail.name) || (fund && fund.name) || '';
+      // 1) QDII — 外汇风险
+      if (/QDII|海外|全球|美国|港股通|纳斯达克/.test(type + ' ' + name)) {
+        badges.push({ label: '外汇风险', tip: 'QDII 基金涉及外汇敞口，受汇率波动影响' });
+      }
+      // 2) 规模偏小 — 清盘风险
+      if (detail && typeof detail.fundSize === 'number' && detail.fundSize > 0 && detail.fundSize < 0.5) {
+        // fundSize 约定单位为亿元；< 0.5 亿 = 5000 万
+        badges.push({ label: '规模偏小', tip: '最新披露规模 < 5000 万元，关注清盘风险' });
+      } else if (detail && typeof detail.fundSize === 'string') {
+        const m = detail.fundSize.match(/([\d.]+)\s*(亿|万)/);
+        if (m) {
+          const num = parseFloat(m[1]);
+          const unit = m[2];
+          const yi = unit === '万' ? num / 10000 : num;
+          if (yi > 0 && yi < 0.5) {
+            badges.push({ label: '规模偏小', tip: '最新披露规模 < 5000 万元，关注清盘风险' });
+          }
+        }
+      }
+      // 3) 经理任职 < 1 年
+      if (detail && Array.isArray(detail.managerDetails) && detail.managerDetails.length > 0) {
+        const younger = detail.managerDetails.some(m => {
+          if (!m.workTime) return false;
+          const yrMatch = String(m.workTime).match(/(\d+)\s*年/);
+          const dayMatch = String(m.workTime).match(/(\d+)\s*天/);
+          if (yrMatch && parseInt(yrMatch[1]) >= 1) return false;
+          if (dayMatch && parseInt(dayMatch[1]) >= 365) return false;
+          return true;
+        });
+        if (younger) {
+          badges.push({ label: '经理任职 < 1 年', tip: '现任基金经理任职未满 1 年，业绩可比性有限' });
+        }
+      }
+      // 4) 封闭/定开产品
+      if (/定开|持有期|封闭|\d+年期|\d+个月期/.test(name)) {
+        badges.push({ label: '封闭期', tip: '产品存在封闭期或最短持有期，流动性受限' });
+      }
+      // 5) FOF — 二层费率
+      if (/FOF/i.test(type) || /FOF/.test(name)) {
+        badges.push({ label: 'FOF · 二层费率', tip: 'FOF 产品底层基金可能产生额外管理费' });
+      }
+      return badges;
+    },
+
+    // ── Export Institution (M2) ──────────────────────────────────
+    // format: 'excel' | 'markdown' | 'print'
+    async exportInstitution(inst, format) {
+      if (!inst || !inst.products || inst.products.length === 0) {
+        this.showToast('该机构产品池为空');
+        return;
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      // 构造导出数据 — 尽量使用已缓存的字段
+      const rows = inst.products.map(p => {
+        const meta = (this._fundMetaCache && this._fundMetaCache[p.code]) || {};
+        return {
+          代码: p.code,
+          名称: p.name || meta.name || '',
+          类型: p.type || meta.type || this.classifyProduct(p),
+          基金经理: p.manager || (Array.isArray(meta.managerDetails) ? meta.managerDetails.map(m => m.name).join('/') : ''),
+          最新净值: meta.latestNav != null ? Number(meta.latestNav).toFixed(4) : '',
+          近1年收益: (meta.returns && meta.returns['1y'] != null) ? Number(meta.returns['1y']).toFixed(2) + '%' : '',
+          规模: meta.fundSize || '',
+          备注: p.note || ''
+        };
+      });
+
+      if (format === 'excel') {
+        try {
+          const ws = XLSX.utils.json_to_sheet(rows);
+          // 自适应列宽
+          const cols = Object.keys(rows[0] || {});
+          ws['!cols'] = cols.map(k => ({
+            wch: Math.max(k.length + 2, ...rows.map(r => String(r[k] || '').length + 2))
+          }));
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, inst.name.slice(0, 28));
+          const filename = `${inst.name}_产品池_${today}.xlsx`;
+          XLSX.writeFile(wb, filename);
+          this.showToast('Excel 已导出');
+        } catch (e) {
+          console.error(e);
+          this.showToast('导出失败');
+        }
+        return;
+      }
+
+      if (format === 'markdown') {
+        const cols = Object.keys(rows[0] || {});
+        let md = `# ${inst.name} · 产品池清单\n\n`;
+        md += `_数据截至 ${today} · 共 ${rows.length} 只产品_\n\n`;
+        md += '| ' + cols.join(' | ') + ' |\n';
+        md += '|' + cols.map(() => '---').join('|') + '|\n';
+        rows.forEach(r => {
+          md += '| ' + cols.map(c => String(r[c] || '').replace(/\|/g, '\\|')).join(' | ') + ' |\n';
+        });
+        try {
+          await navigator.clipboard.writeText(md);
+          this.showToast('Markdown 表已复制到剪贴板');
+        } catch (e) {
+          // Fallback: 显示一个文本框
+          const ta = document.createElement('textarea');
+          ta.value = md;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          this.showToast('Markdown 表已复制');
+        }
+        return;
+      }
+
+      if (format === 'print') {
+        // 展开该机构，设置打印标识，调用 window.print()
+        this.expandedInst = inst.id;
+        this.printingInstId = inst.id;
+        this.printingInstName = inst.name;
+        this.printingDate = today;
+        await this.$nextTick();
+        setTimeout(() => {
+          window.print();
+          setTimeout(() => {
+            this.printingInstId = null;
+          }, 500);
+        }, 150);
+        return;
+      }
+    },
+    // 切换导出菜单展开
+    toggleExportMenu(inst, event) {
+      if (event) event.stopPropagation();
+      this.exportMenuInstId = (this.exportMenuInstId === inst.id) ? null : inst.id;
+    },
+    closeExportMenu() {
+      this.exportMenuInstId = null;
     },
 
     // ── Compare (Feature 3) ──────────────────────────────────────
@@ -3668,6 +3996,9 @@ createApp({
       if (!e.target.closest('.dropdown')) {
         this.showInstDropdown = false;
         this.showImportInstDropdown = false;
+      }
+      if (!e.target.closest('.export-menu-wrap')) {
+        this.exportMenuInstId = null;
       }
     });
 
