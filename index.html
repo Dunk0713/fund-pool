@@ -604,29 +604,46 @@
     .return-cell .value.up { color: var(--pos); }
     .return-cell .value.down { color: var(--neg); }
     .return-cell .value.flat { color: var(--ink-500); }
-    .return-cell .drawdown {
-      margin-top: 4px;
-      padding-top: 4px;
-      border-top: 1px dashed var(--ink-200);
-      display: flex;
-      align-items: baseline;
-      justify-content: center;
-      gap: 4px;
+    /* 阶段表现表（收益 + 回撤 两行对齐） */
+    .perf-table {
+      width: 100%;
+      border-collapse: collapse;
       font-variant-numeric: tabular-nums;
+      table-layout: fixed;
     }
-    .return-cell .dd-label {
-      font-size: 10px;
-      color: var(--ink-400);
-      letter-spacing: 0.2px;
-    }
-    .return-cell .dd-value {
+    .perf-table th,
+    .perf-table td {
+      padding: 8px 4px;
+      text-align: right;
       font-size: var(--fs-sm);
-      font-weight: 500;
-      color: var(--warn);
+      line-height: 1.4;
     }
-    .fund-detail-subtitle {
-      font-weight: 400;
+    .perf-table th {
+      font-weight: 500;
       color: var(--ink-400);
+      font-size: var(--fs-xs);
+      border-bottom: 1px solid var(--ink-200);
+      padding-bottom: 6px;
+    }
+    .perf-table .perf-row-label {
+      text-align: left;
+      color: var(--ink-500);
+      font-size: var(--fs-xs);
+      font-weight: 500;
+      width: 52px;
+      white-space: nowrap;
+    }
+    .perf-table tbody tr + tr td { border-top: 1px solid var(--ink-100); }
+    .perf-table .perf-value {
+      font-weight: 600;
+      color: var(--ink-800);
+    }
+    .perf-table .perf-value.up { color: var(--pos); }
+    .perf-table .perf-value.down { color: var(--neg); }
+    .perf-table .perf-value.flat { color: var(--ink-400); }
+    .perf-table .perf-dd {
+      color: var(--warn);
+      font-weight: 500;
     }
     .manager-row {
       display: flex;
@@ -2059,27 +2076,41 @@
 
         <!-- Returns + Max Drawdown Section -->
         <div class="fund-detail-section" v-if="fundDetail.returns">
-          <div class="fund-detail-title">
-            阶段收益率 <span class="fund-detail-subtitle">· 区间最大回撤</span>
-          </div>
-          <div class="returns-grid">
-            <div class="return-cell" v-for="p in [
-              { key: '1m', label: '近1月' },
-              { key: '3m', label: '近3月' },
-              { key: '6m', label: '近6月' },
-              { key: '1y', label: '近1年' },
-              { key: 'all', label: '成立来' }
-            ]" :key="p.key">
-              <div class="label">{{ p.label }}</div>
-              <div class="value" :class="returnClass(fundDetail.returns[p.key])">
-                {{ formatReturn(fundDetail.returns[p.key]) }}
-              </div>
-              <div class="drawdown" :title="'区间内最大回撤'" v-if="fundDetail.drawdowns && fundDetail.drawdowns[p.key] != null">
-                <span class="dd-label">回撤</span>
-                <span class="dd-value">{{ formatDrawdown(fundDetail.drawdowns[p.key]) }}</span>
-              </div>
-            </div>
-          </div>
+          <div class="fund-detail-title">阶段表现</div>
+          <table class="perf-table">
+            <thead>
+              <tr>
+                <th class="perf-row-label"></th>
+                <th v-for="p in [
+                  { key: '1m', label: '近1月' },
+                  { key: '3m', label: '近3月' },
+                  { key: '6m', label: '近6月' },
+                  { key: '1y', label: '近1年' },
+                  { key: 'all', label: '成立来' }
+                ]" :key="p.key">{{ p.label }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="perf-row-label">收益</td>
+                <td
+                  v-for="p in ['1m','3m','6m','1y','all']"
+                  :key="'r-'+p"
+                  class="perf-value num"
+                  :class="returnClass(fundDetail.returns[p])"
+                >{{ formatReturn(fundDetail.returns[p]) }}</td>
+              </tr>
+              <tr v-if="fundDetail.drawdowns">
+                <td class="perf-row-label">最大回撤</td>
+                <td
+                  v-for="p in ['1m','3m','6m','1y','all']"
+                  :key="'d-'+p"
+                  class="perf-value perf-dd num"
+                  :title="'区间内最大回撤'"
+                >{{ formatDrawdown(fundDetail.drawdowns[p]) }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
         <!-- Manager Section -->
