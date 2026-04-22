@@ -1552,6 +1552,230 @@
     /* Print-only header (hidden on screen, shown when printing) */
     .print-header { display: none; }
 
+    /* ═══════════════════════════════════════════════════════════════
+       M3 · Manager tab / chip bar / comparison
+       ═══════════════════════════════════════════════════════════════ */
+
+    /* Chip bar (F2.1) */
+    .chip-bar {
+      display: flex;
+      gap: var(--sp-1);
+      margin-top: var(--sp-2);
+      overflow-x: auto;
+      padding-bottom: 2px;
+      scrollbar-width: thin;
+      -ms-overflow-style: none;
+    }
+    .chip-bar::-webkit-scrollbar { height: 3px; }
+    .chip-bar::-webkit-scrollbar-thumb { background: var(--ink-200); border-radius: 2px; }
+    .chip {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      height: 26px;
+      padding: 0 10px;
+      background: var(--paper);
+      border: 1px solid var(--ink-200);
+      color: var(--ink-600);
+      border-radius: 13px;
+      font-size: var(--fs-xs);
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+    }
+    .chip:hover { border-color: var(--brand-ink); color: var(--brand-ink); }
+    .chip.active {
+      background: var(--brand-ink);
+      border-color: var(--brand-ink);
+      color: #fff;
+    }
+    .chip-count {
+      font-size: 10px;
+      opacity: 0.7;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Manager list */
+    .manager-list-card { padding: 0; }
+    .manager-row-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--sp-2);
+      padding: var(--sp-3) var(--sp-4);
+      border-bottom: 1px solid var(--ink-100);
+      cursor: pointer;
+      transition: background var(--dur) var(--ease);
+    }
+    .manager-row-item:last-child { border-bottom: none; }
+    .manager-row-item:hover { background: var(--brand-tint); }
+    .manager-row-main { min-width: 0; flex: 1; }
+    .manager-row-name {
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      color: var(--ink-900);
+      margin-bottom: 2px;
+    }
+    .manager-row-meta {
+      font-size: var(--fs-xs);
+      color: var(--ink-500);
+    }
+
+    /* Manager detail */
+    .manager-detail-header {
+      padding: var(--sp-4);
+      border-bottom: 1px solid var(--ink-200);
+    }
+    .manager-detail-name {
+      font-size: var(--fs-display);
+      line-height: var(--lh-display);
+      font-weight: 600;
+      color: var(--ink-900);
+      letter-spacing: -0.2px;
+    }
+    .manager-detail-sub {
+      font-size: var(--fs-sm);
+      color: var(--ink-500);
+      margin-top: 4px;
+    }
+    .manager-funds-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--fs-sm);
+    }
+    .manager-funds-table th,
+    .manager-funds-table td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--ink-100);
+    }
+    .manager-funds-table th {
+      background: var(--ink-050);
+      font-weight: 600;
+      color: var(--ink-600);
+      font-size: var(--fs-xs);
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+    .manager-funds-table tbody tr:hover { background: var(--ink-050); }
+    .manager-funds-table .num-col { text-align: right; }
+    .type-pill {
+      display: inline-block;
+      padding: 1px 6px;
+      background: var(--ink-100);
+      color: var(--ink-600);
+      border-radius: var(--r-sm);
+      font-size: var(--fs-xs);
+    }
+
+    /* Manager link in fund-detail */
+    .manager-name.manager-link {
+      color: var(--brand-ink);
+      cursor: pointer;
+      text-decoration: underline dotted;
+      text-underline-offset: 2px;
+    }
+    .manager-name.manager-link:hover { color: var(--brand-ink-hover); }
+
+    /* Comparison view */
+    .compare-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--sp-3);
+      padding: var(--sp-3);
+      background: var(--brand-tint);
+      border: 1px solid var(--ink-200);
+      border-radius: var(--r-md);
+      margin-bottom: var(--sp-3);
+    }
+    .compare-toolbar-info {
+      font-size: var(--fs-sm);
+      color: var(--ink-700, var(--ink-800));
+    }
+    .inst-card.compare-selectable .inst-header { cursor: pointer; }
+    .inst-card.compare-selectable .inst-actions { display: none; }
+    .inst-card.compare-selectable {
+      border-color: var(--ink-200);
+    }
+    .inst-card.compare-selected {
+      border-color: var(--brand-ink) !important;
+      box-shadow: 0 0 0 1px var(--brand-ink), var(--sh-1);
+    }
+    .compare-result {
+      margin-bottom: var(--sp-3);
+      padding: 0;
+    }
+    .compare-section {
+      padding: var(--sp-3) var(--sp-4);
+      border-bottom: 1px solid var(--ink-100);
+    }
+    .compare-section:last-child { border-bottom: none; }
+    .compare-heading {
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      color: var(--ink-800);
+      margin-bottom: var(--sp-2);
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+    }
+    .compare-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 22px;
+      height: 18px;
+      padding: 0 6px;
+      background: var(--brand-ink);
+      color: #fff;
+      border-radius: 9px;
+      font-size: var(--fs-xs);
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .compare-empty {
+      font-size: var(--fs-sm);
+      color: var(--ink-400);
+      padding: var(--sp-2) 0;
+    }
+    .compare-fund-list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .compare-fund-item {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      padding: 6px 8px;
+      font-size: var(--fs-sm);
+      color: var(--ink-800);
+      border-radius: var(--r-sm);
+    }
+    .compare-fund-item:hover { background: var(--ink-050); }
+    .compare-fund-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .heat-rank {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      background: var(--ink-100);
+      color: var(--ink-600);
+      border-radius: var(--r-sm);
+      font-size: var(--fs-xs);
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+    .heat-coverage {
+      font-size: var(--fs-xs);
+      color: var(--ink-500);
+      white-space: nowrap;
+    }
+
     /* ── @media print ──────────────────────────────────────────────
        Chrome/Edge 友好；仅打印当前 inst-card
        ───────────────────────────────────────────────────────────── */
@@ -1710,12 +1934,22 @@
             type="text"
             v-model="fundQuery"
             @input="onFundQueryInput"
-            placeholder="输入基金代码或名称..."
+            placeholder="输入基金代码 / 名称 / 基金经理..."
             ref="fundInput"
           >
         </div>
+        <!-- Quick filter chips (M3-F2.1) -->
+        <div class="chip-bar" v-if="quickFilterChips.length > 1">
+          <button
+            v-for="c in quickFilterChips"
+            :key="c.key"
+            class="chip"
+            :class="{ active: quickFilter === c.key }"
+            @click="quickFilter = c.key; onFundQueryInput()"
+          >{{ c.label }} <span class="chip-count">{{ c.count }}</span></button>
+        </div>
         <!-- Suggestions -->
-        <div class="suggestions" v-if="fundQuery && fundSuggestions.length > 0 && !queryResult">
+        <div class="suggestions" v-if="(fundQuery || quickFilter !== 'all') && fundSuggestions.length > 0 && !queryResult">
           <div
             class="suggestion-item"
             v-for="p in fundSuggestions"
@@ -1808,7 +2042,7 @@
         <div class="fund-detail-section" v-if="fundDetail.managerDetails && fundDetail.managerDetails.length > 0">
           <div class="fund-detail-title">基金经理</div>
           <div class="manager-row" v-for="m in fundDetail.managerDetails" :key="m.name">
-            <span class="manager-name">{{ m.name }}</span>
+            <span class="manager-name manager-link" @click="openManager(m.name)" :title="'查看 ' + m.name + ' 的全部在池基金'">{{ m.name }}</span>
             <span class="manager-info">
               <template v-if="m.workTime">任职{{ m.workTime }}</template>
               <template v-if="m.fundSize"><br>管理规模 {{ m.fundSize }}</template>
@@ -1848,11 +2082,63 @@
 
     <!-- Manage View -->
     <div class="container" v-if="currentView === 'manage'">
-      <div class="toolbar">
+      <div class="toolbar" v-if="!compareMode">
         <button class="btn btn-primary btn-sm" @click="showAddInstModal = true">+ 新增机构</button>
+        <button class="btn btn-outline btn-sm" @click="toggleCompareMode" v-if="institutions.length >= 2">机构对比</button>
         <button class="btn btn-outline btn-sm" @click="exportData">导出备份</button>
         <button class="btn btn-outline btn-sm" @click="$refs.importJsonInput.click()">导入备份</button>
         <input type="file" ref="importJsonInput" accept=".json" style="display:none" @change="importBackup">
+      </div>
+      <!-- Compare mode toolbar -->
+      <div class="compare-toolbar" v-if="compareMode">
+        <div class="compare-toolbar-info">
+          已选 <span class="num">{{ compareSelectedInstIds.length }}</span> 家 · 请选择 2~5 家机构进行对比
+        </div>
+        <button class="btn btn-ghost btn-sm" @click="exitCompareMode">退出对比</button>
+      </div>
+
+      <!-- Comparison Result (M3-F2.2 / M4-F2.3) -->
+      <div class="card compare-result" v-if="compareMode && comparisonResult">
+        <div class="compare-section">
+          <div class="compare-heading">
+            交集 · 所有 {{ comparisonResult.selected.length }} 家共有
+            <span class="compare-count">{{ comparisonResult.intersect.length }}</span>
+          </div>
+          <div class="compare-empty" v-if="comparisonResult.intersect.length === 0">无共同产品</div>
+          <div v-else class="compare-fund-list">
+            <div class="compare-fund-item" v-for="p in comparisonResult.intersect" :key="'int-'+p.code">
+              <span class="num">{{ p.code }}</span>
+              <span class="compare-fund-name">{{ p.name }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="compare-section" v-for="inst in comparisonResult.selected" :key="'only-'+inst.id">
+          <div class="compare-heading">
+            仅 {{ inst.name }} 独有
+            <span class="compare-count">{{ comparisonResult.perInstOnly[inst.id].length }}</span>
+          </div>
+          <div class="compare-empty" v-if="comparisonResult.perInstOnly[inst.id].length === 0">无独有产品</div>
+          <div v-else class="compare-fund-list">
+            <div class="compare-fund-item" v-for="p in comparisonResult.perInstOnly[inst.id]" :key="'only-'+inst.id+'-'+p.code">
+              <span class="num">{{ p.code }}</span>
+              <span class="compare-fund-name">{{ p.name }}</span>
+            </div>
+          </div>
+        </div>
+        <!-- N 家热度排行 (M4-F2.3) -->
+        <div class="compare-section" v-if="comparisonResult.heatRanking">
+          <div class="compare-heading">全市场覆盖度热度排行</div>
+          <div class="compare-fund-list">
+            <div class="compare-fund-item" v-for="(row, i) in comparisonResult.heatRanking.slice(0, 20)" :key="'heat-'+row.code">
+              <span class="heat-rank">{{ i + 1 }}</span>
+              <span class="num">{{ row.code }}</span>
+              <span class="compare-fund-name">{{ row.product.name }}</span>
+              <span class="heat-coverage">
+                <span class="num">{{ row.coverage }}</span>/{{ comparisonResult.selected.length }} 家
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div v-if="institutions.length === 0" class="empty-state">
@@ -1864,14 +2150,14 @@
         class="inst-card"
         v-for="inst in institutions"
         :key="inst.id"
-        :class="{ 'print-target': printingInstId === inst.id }"
+        :class="{ 'print-target': printingInstId === inst.id, 'compare-selectable': compareMode, 'compare-selected': compareMode && compareSelectedInstIds.includes(inst.id) }"
       >
         <!-- Print-only header (shown only during window.print() for this inst) -->
         <div class="print-header" v-if="printingInstId === inst.id">
           <div class="print-title">中欧基金 · {{ inst.name }} · 产品池清单</div>
           <div class="print-meta">数据截至 {{ printingDate }} · 共 {{ inst.products.length }} 只产品 · 仅供机构客户内部参考 · 不构成投资建议</div>
         </div>
-        <div class="inst-header" @click="toggleExpand(inst.id)">
+        <div class="inst-header" @click="compareMode ? toggleCompareInst(inst) : toggleExpand(inst.id)">
           <div>
             <div class="inst-name">{{ inst.name }}</div>
             <div class="inst-meta">{{ inst.products.length }} 只产品</div>
@@ -2105,6 +2391,75 @@
       </div>
     </div>
 
+    <!-- Manager View (M3-F1) — 反向查询基金经理 -->
+    <div class="container" v-if="currentView === 'manager'">
+      <!-- Manager detail -->
+      <div v-if="selectedManagerName">
+        <button class="btn btn-ghost btn-sm" @click="selectedManagerName = null" style="margin-bottom:8px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          返回经理列表
+        </button>
+        <div class="card">
+          <div class="manager-detail-header">
+            <div class="manager-detail-name">{{ selectedManagerName }}</div>
+            <div class="manager-detail-sub">
+              在池基金 <span class="num">{{ selectedManagerFunds.length }}</span> 只
+              · 纳入机构 <span class="num">{{ selectedManagerInstitutionCount }}</span> 家
+            </div>
+          </div>
+          <table class="manager-funds-table">
+            <thead>
+              <tr><th>代码</th><th>名称</th><th>类型</th><th class="num-col">近1年</th><th class="num-col">覆盖机构</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in selectedManagerFunds" :key="row.code">
+                <td class="num">{{ row.code }}</td>
+                <td>{{ row.name }}</td>
+                <td><span class="type-pill">{{ row.type || '-' }}</span></td>
+                <td class="num-col num" :class="returnClass(row.oneYearReturn)">{{ formatReturn(row.oneYearReturn) }}</td>
+                <td class="num-col num">{{ row.instCount }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Manager list -->
+      <div v-else>
+        <div class="input-group">
+          <div class="input-wrap">
+            <input
+              type="text"
+              v-model="managerSearchText"
+              placeholder="搜索基金经理..."
+            >
+          </div>
+        </div>
+        <div class="empty-state" v-if="filteredManagers.length === 0">
+          <div class="empty-icon" v-html="ICONS.building"></div>
+          <p v-if="institutions.length === 0">暂无机构数据<br>请先在「管理」中添加机构</p>
+          <p v-else>尚未匹配到基金经理<br>请等待"补全经理"完成或修改搜索关键字</p>
+        </div>
+        <div class="card manager-list-card" v-else>
+          <div
+            class="manager-row-item"
+            v-for="m in filteredManagers"
+            :key="m.name"
+            @click="openManager(m.name)"
+          >
+            <div class="manager-row-main">
+              <div class="manager-row-name">{{ m.name }}</div>
+              <div class="manager-row-meta">
+                在池 <span class="num">{{ m.fundCount }}</span> 只
+                · 覆盖 <span class="num">{{ m.instCount }}</span> 家机构
+              </div>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--ink-400);flex-shrink:0"><path d="M9 18l6-6-6-6"/></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Import View -->
     <div class="container" v-if="currentView === 'import'">
       <!-- Target Institution -->
@@ -2242,6 +2597,12 @@
           <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
         </svg>
         管理
+      </button>
+      <button class="nav-item" :class="{active: currentView === 'manager'}" @click="switchView('manager')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>
+        </svg>
+        经理
       </button>
       <button class="nav-item" :class="{active: currentView === 'import'}" @click="switchView('import')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2867,7 +3228,18 @@ createApp({
       compareData: [],
 
       // Toast
-      toast: { message: '', visible: false, timer: null }
+      toast: { message: '', visible: false, timer: null },
+
+      // M3-F1 Manager tab
+      managerSearchText: '',
+      selectedManagerName: null,
+
+      // M3-F2.1 Quick filter chips
+      quickFilter: 'all',
+
+      // M3-F2.2 Institution comparison
+      compareMode: false,
+      compareSelectedInstIds: []
     };
   },
 
@@ -2896,6 +3268,155 @@ createApp({
     // 风险徽章 — 基于基金类型/规模/经理/名称派生的合规提示
     riskBadges() {
       return this.computeRiskBadges(this.fundDetail, this.matchedFund);
+    },
+
+    // ── M3-F1 Manager Index ─────────────────────────────────────
+    // { name -> { fundCount, instCount, funds: [{code,name,type,oneYearReturn,instCount}] } }
+    managerIndex() {
+      const idx = new Map(); // managerName -> aggregated
+      const fundToInsts = new Map(); // code -> Set(instId)
+      // 第一遍：建立 code → 机构集合
+      for (const inst of this.institutions) {
+        for (const p of (inst.products || [])) {
+          const code = String(p.code || '').trim();
+          if (!code) continue;
+          if (!fundToInsts.has(code)) fundToInsts.set(code, new Set());
+          fundToInsts.get(code).add(inst.id);
+        }
+      }
+      // 第二遍：对每只基金取经理（优先 product.manager，其次缓存 managerDetails）
+      const seenFundPerManager = new Map(); // managerName -> Set<code>
+      for (const [code, instSet] of fundToInsts.entries()) {
+        // 找一条代表性 product 以获取 name/type/manager
+        let repProduct = null;
+        let meta = null;
+        for (const inst of this.institutions) {
+          const p = (inst.products || []).find(x => String(x.code || '').trim() === code);
+          if (p) { repProduct = p; break; }
+        }
+        meta = (this._fundMetaCache && this._fundMetaCache[code]) || null;
+        // 经理名集合
+        const mgrNames = new Set();
+        if (repProduct && repProduct.manager) {
+          String(repProduct.manager).split(/[,，、\/\s]+/).filter(Boolean).forEach(n => mgrNames.add(n));
+        }
+        if (meta && Array.isArray(meta.managerDetails)) {
+          meta.managerDetails.forEach(m => m.name && mgrNames.add(m.name));
+        }
+        if (mgrNames.size === 0) continue;
+
+        const oneYearReturn = meta && meta.returns ? meta.returns['1y'] : null;
+        const type = (repProduct && repProduct.type) || (meta && meta.type) || '';
+        const name = (repProduct && repProduct.name) || (meta && meta.name) || '';
+
+        for (const mgr of mgrNames) {
+          if (!idx.has(mgr)) idx.set(mgr, { name: mgr, funds: [], instIds: new Set() });
+          const entry = idx.get(mgr);
+          if (!seenFundPerManager.has(mgr)) seenFundPerManager.set(mgr, new Set());
+          if (seenFundPerManager.get(mgr).has(code)) continue;
+          seenFundPerManager.get(mgr).add(code);
+          entry.funds.push({
+            code, name, type,
+            oneYearReturn,
+            instCount: instSet.size
+          });
+          instSet.forEach(id => entry.instIds.add(id));
+        }
+      }
+      // 转数组并汇总
+      const arr = [];
+      for (const entry of idx.values()) {
+        arr.push({
+          name: entry.name,
+          fundCount: entry.funds.length,
+          instCount: entry.instIds.size,
+          funds: entry.funds.sort((a, b) => (b.oneYearReturn || -999) - (a.oneYearReturn || -999))
+        });
+      }
+      arr.sort((a, b) => b.fundCount - a.fundCount || b.instCount - a.instCount);
+      return arr;
+    },
+    filteredManagers() {
+      const list = this.managerIndex;
+      const q = this.managerSearchText.trim();
+      if (!q) return list;
+      return list.filter(m => fuzzyMatch(q, m.name).match);
+    },
+    selectedManagerFunds() {
+      if (!this.selectedManagerName) return [];
+      const entry = this.managerIndex.find(m => m.name === this.selectedManagerName);
+      return entry ? entry.funds : [];
+    },
+    selectedManagerInstitutionCount() {
+      if (!this.selectedManagerName) return 0;
+      const entry = this.managerIndex.find(m => m.name === this.selectedManagerName);
+      return entry ? entry.instCount : 0;
+    },
+
+    // ── M3-F2.1 Quick filter chips ──────────────────────────────
+    // 当前选中机构的产品分类统计 + 可投资筛选
+    quickFilterChips() {
+      if (!this.selectedInstitution) return [];
+      const products = this.selectedInstitution.products || [];
+      const counts = { all: products.length, 债券: 0, QDII: 0, 股票: 0, 混合: 0, 货币: 0, 其他: 0, 定开: 0, 新发: 0 };
+      const now = Date.now();
+      for (const p of products) {
+        const cls = this.classifyProduct(p);
+        if (counts[cls] != null) counts[cls]++;
+        if (/定开|持有期|\d+年期|\d+个月期/.test(p.name || '')) counts['定开']++;
+        const meta = this._fundMetaCache && this._fundMetaCache[p.code];
+        if (meta && meta.inceptionDate) {
+          const d = new Date(meta.inceptionDate).getTime();
+          if (!isNaN(d) && (now - d) < 90 * 24 * 3600 * 1000) counts['新发']++;
+        }
+      }
+      const order = ['all', '债券', '股票', '混合', 'QDII', '货币', '新发', '定开', '其他'];
+      const labelMap = { all: '全部' };
+      return order
+        .filter(k => counts[k] > 0)
+        .map(k => ({ key: k, label: labelMap[k] || k, count: counts[k] }));
+    },
+
+    // ── M3-F2.2 Comparison ─────────────────────────────────────
+    compareSelectedInsts() {
+      return this.compareSelectedInstIds
+        .map(id => this.institutions.find(i => i.id === id))
+        .filter(Boolean);
+    },
+    comparisonResult() {
+      const selected = this.compareSelectedInsts;
+      if (selected.length < 2) return null;
+      // code -> { product, inInsts: Set<instId> }
+      const fundMap = new Map();
+      for (const inst of selected) {
+        for (const p of (inst.products || [])) {
+          const code = String(p.code || '').trim();
+          if (!code) continue;
+          if (!fundMap.has(code)) fundMap.set(code, { product: p, inInsts: new Set() });
+          fundMap.get(code).inInsts.add(inst.id);
+        }
+      }
+      const intersect = []; // 全部机构都有
+      const perInstOnly = {}; // instId -> [product]
+      const heatRanking = []; // N 家对比时用
+      selected.forEach(i => { perInstOnly[i.id] = []; });
+      for (const [code, info] of fundMap.entries()) {
+        const coverage = info.inInsts.size;
+        heatRanking.push({ code, product: info.product, coverage });
+        if (coverage === selected.length) {
+          intersect.push(info.product);
+        } else if (coverage === 1) {
+          const onlyId = [...info.inInsts][0];
+          perInstOnly[onlyId].push(info.product);
+        }
+      }
+      heatRanking.sort((a, b) => b.coverage - a.coverage);
+      return {
+        selected,
+        intersect,
+        perInstOnly,
+        heatRanking: selected.length >= 3 ? heatRanking : null
+      };
     }
   },
 
@@ -2994,13 +3515,38 @@ createApp({
       this.fundTags = [];
       this.fundTagsLoading = false;
       this.fundDetail = null;
-      if (!this.fundQuery.trim() || !this.selectedInstitution) {
+      if (!this.selectedInstitution) {
         this.fundSuggestions = [];
         return;
       }
-      const q = normalizeCode(this.fundQuery.trim());
+      const hasQ = !!this.fundQuery.trim();
+      const filter = this.quickFilter;
+      // 如果既没输入文字也没激活非默认 chip，则清空建议
+      if (!hasQ && filter === 'all') {
+        this.fundSuggestions = [];
+        return;
+      }
+      const now = Date.now();
+      const q = hasQ ? normalizeCode(this.fundQuery.trim()) : '';
       const results = [];
       for (const p of this.selectedInstitution.products) {
+        // 先应用 quickFilter
+        if (filter !== 'all') {
+          if (filter === '定开') {
+            if (!/定开|持有期|\d+年期|\d+个月期/.test(p.name || '')) continue;
+          } else if (filter === '新发') {
+            const meta = this._fundMetaCache && this._fundMetaCache[p.code];
+            if (!meta || !meta.inceptionDate) continue;
+            const d = new Date(meta.inceptionDate).getTime();
+            if (isNaN(d) || (now - d) >= 90 * 24 * 3600 * 1000) continue;
+          } else {
+            if (this.classifyProduct(p) !== filter) continue;
+          }
+        }
+        if (!hasQ) {
+          results.push({ ...p, score: 1 });
+          continue;
+        }
         const nameMatch = fuzzyMatch(this.fundQuery.trim(), p.name);
         const codeMatch = fuzzyMatch(q, p.code);
         const mgrMatch = p.manager ? fuzzyMatch(this.fundQuery.trim(), p.manager) : { match: false, score: 0 };
@@ -3010,7 +3556,7 @@ createApp({
         }
       }
       results.sort((a, b) => b.score - a.score);
-      this.fundSuggestions = results.slice(0, 8);
+      this.fundSuggestions = results.slice(0, hasQ ? 8 : 40);
     },
 
     selectFund(fund) {
@@ -3484,6 +4030,34 @@ createApp({
     },
     closeExportMenu() {
       this.exportMenuInstId = null;
+    },
+
+    // ── M3-F1 Manager navigation ─────────────────────────────────
+    openManager(name) {
+      if (!name) return;
+      this.selectedManagerName = name;
+      this.currentView = 'manager';
+      this.managerSearchText = '';
+      // 滚动到顶部
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+
+    // ── M3-F2.2 Comparison toggle ────────────────────────────────
+    toggleCompareMode() {
+      this.compareMode = !this.compareMode;
+      this.compareSelectedInstIds = [];
+    },
+    toggleCompareInst(inst) {
+      const idx = this.compareSelectedInstIds.indexOf(inst.id);
+      if (idx >= 0) {
+        this.compareSelectedInstIds.splice(idx, 1);
+      } else {
+        this.compareSelectedInstIds.push(inst.id);
+      }
+    },
+    exitCompareMode() {
+      this.compareMode = false;
+      this.compareSelectedInstIds = [];
     },
 
     // ── Compare (Feature 3) ──────────────────────────────────────
