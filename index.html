@@ -601,9 +601,33 @@
       font-weight: 600;
       font-variant-numeric: tabular-nums;
     }
-    .return-cell .value.up { color: #dc2626; }
-    .return-cell .value.down { color: #16a34a; }
-    .return-cell .value.flat { color: var(--text-tertiary); }
+    .return-cell .value.up { color: var(--pos); }
+    .return-cell .value.down { color: var(--neg); }
+    .return-cell .value.flat { color: var(--ink-500); }
+    .return-cell .drawdown {
+      margin-top: 4px;
+      padding-top: 4px;
+      border-top: 1px dashed var(--ink-200);
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+    .return-cell .dd-label {
+      font-size: 10px;
+      color: var(--ink-400);
+      letter-spacing: 0.2px;
+    }
+    .return-cell .dd-value {
+      font-size: var(--fs-sm);
+      font-weight: 500;
+      color: var(--warn);
+    }
+    .fund-detail-subtitle {
+      font-weight: 400;
+      color: var(--ink-400);
+    }
     .manager-row {
       display: flex;
       align-items: center;
@@ -2033,9 +2057,11 @@
           <div class="nav-date" v-if="fundDetail.navDate">{{ fundDetail.navDate }}</div>
         </div>
 
-        <!-- Returns Section -->
+        <!-- Returns + Max Drawdown Section -->
         <div class="fund-detail-section" v-if="fundDetail.returns">
-          <div class="fund-detail-title">阶段收益率</div>
+          <div class="fund-detail-title">
+            阶段收益率 <span class="fund-detail-subtitle">· 区间最大回撤</span>
+          </div>
           <div class="returns-grid">
             <div class="return-cell" v-for="p in [
               { key: '1m', label: '近1月' },
@@ -2047,6 +2073,10 @@
               <div class="label">{{ p.label }}</div>
               <div class="value" :class="returnClass(fundDetail.returns[p.key])">
                 {{ formatReturn(fundDetail.returns[p.key]) }}
+              </div>
+              <div class="drawdown" :title="'区间内最大回撤'" v-if="fundDetail.drawdowns && fundDetail.drawdowns[p.key] != null">
+                <span class="dd-label">回撤</span>
+                <span class="dd-value">{{ formatDrawdown(fundDetail.drawdowns[p.key]) }}</span>
               </div>
             </div>
           </div>
@@ -3051,24 +3081,45 @@ function fetchFundMeta(bare) {
         navDate = new Date(last.x).toISOString().slice(0, 10);
         if (last.equityReturn != null) dailyChange = last.equityReturn;
       }
-      // Extract multi-period returns
+      // Extract multi-period returns + max drawdown
       const returns = {};
+      const drawdowns = {}; // 区间内最大回撤，负数百分比字符串
       if (nwtArr && nwtArr.length > 1) {
         const lastNav = nwtArr[nwtArr.length - 1].y;
         const lastTs = nwtArr[nwtArr.length - 1].x;
         const periods = { '1m': 30, '3m': 90, '6m': 180, '1y': 365, 'all': Infinity };
+        // 辅助：在 [startIdx, endIdx] 区间内计算最大回撤（以净值序列为基础）
+        const computeMaxDD = (startIdx, endIdx) => {
+          let peak = -Infinity;
+          let maxDD = 0;
+          for (let i = startIdx; i <= endIdx; i++) {
+            const v = nwtArr[i] && nwtArr[i].y;
+            if (v == null || isNaN(v)) continue;
+            if (v > peak) peak = v;
+            if (peak > 0) {
+              const dd = (v - peak) / peak;
+              if (dd < maxDD) maxDD = dd;
+            }
+          }
+          return maxDD; // 负数（或 0）
+        };
         for (const [key, days] of Object.entries(periods)) {
+          let startIdx = 0;
           if (days === Infinity) {
             const firstNav = nwtArr[0].y;
             if (firstNav > 0) returns[key] = ((lastNav - firstNav) / firstNav * 100).toFixed(2);
           } else {
             const target = lastTs - days * 24 * 3600 * 1000;
-            let closest = nwtArr[0];
-            for (const pt of nwtArr) {
-              if (Math.abs(pt.x - target) < Math.abs(closest.x - target)) closest = pt;
+            let closestI = 0;
+            for (let i = 0; i < nwtArr.length; i++) {
+              if (Math.abs(nwtArr[i].x - target) < Math.abs(nwtArr[closestI].x - target)) closestI = i;
             }
+            startIdx = closestI;
+            const closest = nwtArr[closestI];
             if (closest.y > 0) returns[key] = ((lastNav - closest.y) / closest.y * 100).toFixed(2);
           }
+          const dd = computeMaxDD(startIdx, nwtArr.length - 1);
+          drawdowns[key] = (dd * 100).toFixed(2); // 例如 "-12.34"
         }
       }
       returns['1y_raw'] = window.syl_1n;
@@ -3090,7 +3141,7 @@ function fetchFundMeta(bare) {
         return1y: window.syl_1n,
         inceptionDate: inceptionDate,
         latestNav, navDate, dailyChange,
-        returns, topHoldings, managerDetails,
+        returns, drawdowns, topHoldings, managerDetails,
       };
       _fundMetaGlobals.forEach(k => { try { delete window[k]; } catch(e) {} });
       cleanup();
@@ -3848,6 +3899,14 @@ createApp({
       if (isNaN(n) || n === 0) return 'flat';
       return n > 0 ? 'up' : 'down';
     },
+    // 最大回撤：恒为负或 0，显示时带负号
+    formatDrawdown(val) {
+      if (val == null || val === '') return '--';
+      const n = parseFloat(val);
+      if (isNaN(n)) return '--';
+      if (n === 0) return '0.00%';
+      return n.toFixed(2) + '%';
+    },
 
     // ── Pool Stats (Feature 2) ───────────────────────────────────
     async loadPoolStats(inst) {
@@ -4012,6 +4071,7 @@ createApp({
           基金经理: p.manager || (Array.isArray(meta.managerDetails) ? meta.managerDetails.map(m => m.name).join('/') : ''),
           最新净值: meta.latestNav != null ? Number(meta.latestNav).toFixed(4) : '',
           近1年收益: (meta.returns && meta.returns['1y'] != null) ? Number(meta.returns['1y']).toFixed(2) + '%' : '',
+          近1年最大回撤: (meta.drawdowns && meta.drawdowns['1y'] != null) ? Number(meta.drawdowns['1y']).toFixed(2) + '%' : '',
           规模: meta.fundSize || '',
           备注: p.note || ''
         };
