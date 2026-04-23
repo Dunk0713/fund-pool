@@ -546,6 +546,27 @@
       white-space: nowrap;
       font-variant-numeric: tabular-nums;
       padding-top: 2px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .refreshing-dot { display: inline-flex; align-items: center; color: var(--ink-400); }
+    .refreshing-dot svg.spin { animation: zojg-spin 0.9s linear infinite; }
+    @keyframes zojg-spin { to { transform: rotate(360deg); } }
+    .refresh-btn {
+      background: none; border: none; padding: 0 2px; cursor: pointer;
+      color: var(--ink-400); display: inline-flex; align-items: center;
+      border-radius: 3px; transition: color .15s, background .15s;
+    }
+    .refresh-btn:hover { color: var(--brand-ink); background: var(--ink-50, rgba(0,0,0,0.04)); }
+    .stale-hint {
+      font-size: var(--fs-xs);
+      color: var(--warn, #b46a00);
+      background: var(--warn-soft, rgba(180, 106, 0, 0.08));
+      padding: 4px 10px;
+      border-radius: var(--r-sm, 4px);
+      margin: 0 16px 8px;
+      border: 1px solid rgba(180, 106, 0, 0.15);
     }
     .fund-detail-section {
       padding: 16px;
@@ -2058,7 +2079,23 @@
               :title="b.tip"
             >{{ b.label }}</span>
           </div>
-          <div class="data-asof" v-if="fundDetail.navDate">数据截至 {{ fundDetail.navDate }}</div>
+          <div class="data-asof" v-if="fundDetail.navDate">
+            数据截至 {{ fundDetail.navDate }}
+            <span v-if="fundDetailRefreshing" class="refreshing-dot" title="正在获取最新数据">
+              <svg class="spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+              </svg>
+            </span>
+            <button v-else class="refresh-btn" @click="refreshCurrentFund" title="手动刷新">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div v-if="fundDetailStale" class="stale-hint">
+          当前显示缓存数据，正在更新至最新交易日…
         </div>
         <!-- NAV Section -->
         <div class="fund-detail-section">
@@ -3061,9 +3098,93 @@ const _fundMetaGlobals = [
   'Data_performanceEvaluation','Data_currentFundManager',
   'Data_buySedemption','Data_fundSharesPositions','swithSameType'
 ];
-let _fundMetaSeq = Promise.resolve();
-function fetchFundMeta(bare) {
-  const curr = _fundMetaSeq.then(() => new Promise((resolve, reject) => {
+// ── PromiseQueue: 限流并发池（替代原 _fundMetaSeq 单链串行） ─────────────
+class PromiseQueue {
+  constructor(concurrency = 4) {
+    this.concurrency = concurrency;
+    this.running = 0;
+    this.queue = [];
+  }
+  add(factory) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ factory, resolve, reject });
+      this._tick();
+    });
+  }
+  _tick() {
+    while (this.running < this.concurrency && this.queue.length) {
+      const { factory, resolve, reject } = this.queue.shift();
+      this.running++;
+      Promise.resolve().then(factory).then(
+        v => { this.running--; resolve(v); this._tick(); },
+        e => { this.running--; reject(e); this._tick(); }
+      );
+    }
+  }
+}
+const _fundMetaQueue = new PromiseQueue(4);
+
+// ── 持久化 meta 缓存（localStorage，按交易日刷新） ──────────────────────
+const META_CACHE_KEY = 'zojg_fund_meta_v1';
+const META_SCHEMA_VERSION = 1;
+const TRADING_DAY_CLOSE_HOUR = 20; // 东财 pingzhongdata 20:00 后发布当日净值
+const META_CACHE_MAX = 300;        // 容量上限；超出按 fetchedAt 淘汰
+
+function loadMetaCache() {
+  try {
+    const raw = localStorage.getItem(META_CACHE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.v === META_SCHEMA_VERSION) return parsed.items || {};
+    return {}; // schema mismatch → 丢弃
+  } catch { return {}; }
+}
+function saveMetaCache(items) {
+  try {
+    // LRU 淘汰：超过容量时按 fetchedAt 排序删最旧
+    const keys = Object.keys(items);
+    if (keys.length > META_CACHE_MAX) {
+      const sorted = keys.sort((a, b) => (items[a].fetchedAt || 0) - (items[b].fetchedAt || 0));
+      const drop = sorted.slice(0, keys.length - META_CACHE_MAX + 50);
+      drop.forEach(k => delete items[k]);
+    }
+    localStorage.setItem(META_CACHE_KEY, JSON.stringify({ v: META_SCHEMA_VERSION, items }));
+  } catch {}
+}
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function isFreshMeta(entry) {
+  if (!entry || !entry.navDate) return false;
+  const today = todayStr();
+  // 1. navDate 等于今天 → 最新
+  if (entry.navDate === today) return true;
+  // 2. navDate 是往期交易日，但现在还未到今日收盘数据发布时段 → 也算新
+  const hours = new Date().getHours();
+  if (hours < TRADING_DAY_CLOSE_HOUR) return true;
+  return false;
+}
+function cacheMeta(bare, meta) {
+  const items = loadMetaCache();
+  items[bare] = { meta, fetchedAt: Date.now(), navDate: meta && meta.navDate };
+  saveMetaCache(items);
+}
+function readCachedMeta(bare) {
+  const items = loadMetaCache();
+  return items[bare] || null;
+}
+
+function fetchFundMeta(bare, opts) {
+  opts = opts || {};
+  // 命中持久化缓存（新鲜）→ 直接返回，不发请求
+  if (!opts.force) {
+    const cached = readCachedMeta(bare);
+    if (cached && cached.meta && isFreshMeta(cached)) {
+      return Promise.resolve(cached.meta);
+    }
+  }
+  const curr = _fundMetaQueue.add(() => new Promise((resolve, reject) => {
     let settled = false;
     const timer = setTimeout(() => { if(!settled){ settled=true; cleanup(); reject(new Error('timeout')); } }, 8000);
     const script = document.createElement('script');
@@ -3176,13 +3297,13 @@ function fetchFundMeta(bare) {
       };
       _fundMetaGlobals.forEach(k => { try { delete window[k]; } catch(e) {} });
       cleanup();
+      try { cacheMeta(bare, meta); } catch(e) {}
       resolve(meta);
     };
     script.onerror = () => { if(!settled){ settled=true; clearTimeout(timer); cleanup(); reject(new Error('load failed')); } };
     function cleanup() { if (script.parentNode) script.parentNode.removeChild(script); }
     document.head.appendChild(script);
   }));
-  _fundMetaSeq = curr.catch(() => {});
   return curr;
 }
 
@@ -3303,6 +3424,10 @@ createApp({
 
       // Fund detail
       fundDetail: null,
+      fundDetailStale: false,       // 是否显示的是陈旧缓存
+      fundDetailRefreshing: false,  // 后台刷新中
+      _fundMetaCacheVersion: 0,     // 供 managerIndex 等 computed 感知 meta 缓存更新
+      _fundQueryDebounceTimer: null,
 
       // Manage - backfill
       backfillLoading: false,
@@ -3369,6 +3494,8 @@ createApp({
     // ── M3-F1 Manager Index ─────────────────────────────────────
     // { name -> { fundCount, instCount, funds: [{code,name,type,oneYearReturn,instCount}] } }
     managerIndex() {
+      // 触发对 meta 缓存版本的依赖 —— meta 到齐后重算
+      void this._fundMetaCacheVersion;
       const idx = new Map(); // managerName -> aggregated
       const fundToInsts = new Map(); // code -> Set(instId)
       // 第一遍：建立 code → 机构集合
@@ -3554,6 +3681,25 @@ createApp({
       } catch (e) {
         this.showToast(handleError('loadData', e));
       }
+      // 预热：浏览器空闲时拉取未缓存/陈旧的基金 meta（受并发池 4 路限流）
+      const ric = typeof window !== 'undefined' && window.requestIdleCallback;
+      const schedule = ric ? cb => ric(cb, { timeout: 3000 }) : cb => setTimeout(cb, 1200);
+      schedule(() => this._prewarmMeta());
+    },
+
+    _prewarmMeta() {
+      const codes = new Set();
+      (this.institutions || []).forEach(i =>
+        (i.products || []).forEach(p => { if (p.code) codes.add(String(p.code).trim()); })
+      );
+      const items = loadMetaCache();
+      codes.forEach(code => {
+        const bare = this.bareCode(code);
+        const entry = items[bare];
+        if (entry && isFreshMeta(entry)) return; // 已新鲜 → 跳过
+        // 进队列，不 await — 并发池自动 4 路处理
+        fetchFundMeta(bare).catch(() => {});
+      });
     },
 
     async saveInst(inst) {
@@ -3637,12 +3783,25 @@ createApp({
     },
 
     onFundQueryInput() {
+      // 重置状态放在首轮即时触发，避免"输入时旧结果闪烁"
       this.queryResult = null;
       this.resultVisible = false;
       this.matchedFund = null;
       this.fundTags = [];
       this.fundTagsLoading = false;
       this.fundDetail = null;
+      // 纯数字代码命中时立即执行，保留即时响应
+      const qRaw = this.fundQuery.trim();
+      if (/^\d{3,6}$/.test(normalizeCode(qRaw)) && this.quickFilter === 'all') {
+        clearTimeout(this._fundQueryDebounceTimer);
+        this._doFundQuery();
+        return;
+      }
+      clearTimeout(this._fundQueryDebounceTimer);
+      this._fundQueryDebounceTimer = setTimeout(() => this._doFundQuery(), 180);
+    },
+
+    _doFundQuery() {
       if (!this.selectedInstitution) {
         this.fundSuggestions = [];
         return;
@@ -3704,6 +3863,8 @@ createApp({
       this.fundTags = [];
       this.fundTagsLoading = true;
       this.fundDetail = null;
+      this.fundDetailStale = false;
+      this.fundDetailRefreshing = false;
       nextTick(() => { this.resultVisible = true; });
       this.loadFundTags(fund.code);
     },
@@ -3736,31 +3897,71 @@ createApp({
     async loadFundTags(code) {
       const bare = this.bareCode(code);
       if (!this._fundMetaCache) this._fundMetaCache = {};
+      // 1) 内存缓存（同会话）命中
       if (this._fundMetaCache[bare]) {
         const cached = this._fundMetaCache[bare];
         this.fundTags = generateFundTags(cached);
         this.fundDetail = cached;
+        this.fundDetailStale = false;
+        this.fundDetailRefreshing = false;
         this.fundTagsLoading = false;
         return;
       }
+      // 2) 持久化缓存（localStorage）— Stale-while-revalidate
+      const persisted = readCachedMeta(bare);
+      let needRefresh = true;
+      if (persisted && persisted.meta) {
+        this.fundDetail = persisted.meta;
+        this.fundTags = generateFundTags(persisted.meta);
+        this.fundTagsLoading = false;
+        const fresh = isFreshMeta(persisted);
+        this.fundDetailStale = !fresh;
+        if (fresh) {
+          // 新鲜 → 也写入内存缓存，不再请求
+          this._fundMetaCache[bare] = persisted.meta;
+          this.fundDetailRefreshing = false;
+          needRefresh = false;
+        } else {
+          this.fundDetailRefreshing = true;
+        }
+      } else {
+        this.fundDetailRefreshing = false;
+        this.fundDetailStale = false;
+      }
+      if (!needRefresh) return;
+      // 3) 后台拉取最新
       try {
         const [meta, apiType, holdings] = await Promise.all([
-          fetchFundMeta(bare),
+          fetchFundMeta(bare, { force: !!persisted }),
           fetchFundType(bare),
           fetchFundHoldings(bare)
         ]);
         if (apiType) meta.type = apiType;
         if (holdings && holdings.length > 0) meta.topHoldings = holdings;
         this._fundMetaCache[bare] = meta;
+        this._fundMetaCacheVersion++;
+        try { cacheMeta(bare, meta); } catch(e) {}
         if (this.matchedFund && this.bareCode(this.matchedFund.code) === bare) {
           this.fundTags = generateFundTags(meta);
           this.fundDetail = meta;
+          this.fundDetailStale = false;
+          this.fundDetailRefreshing = false;
           this.fundTagsLoading = false;
         }
       } catch (e) {
         this.fundTagsLoading = false;
-        this.fundTags = [];
+        this.fundDetailRefreshing = false;
+        if (!persisted) this.fundTags = [];
       }
+    },
+
+    // 手动刷新当前基金
+    refreshCurrentFund() {
+      if (!this.matchedFund || this.fundDetailRefreshing) return;
+      const bare = this.bareCode(this.matchedFund.code);
+      if (this._fundMetaCache) delete this._fundMetaCache[bare];
+      this.fundDetailRefreshing = true;
+      this.loadFundTags(this.matchedFund.code);
     },
 
     // ═══ Manage View ═════════════════════════════════════════════
