@@ -3566,7 +3566,8 @@ createApp({
           const p = (inst.products || []).find(x => String(x.code || '').trim() === code);
           if (p) { repProduct = p; break; }
         }
-        meta = (this._fundMetaCache && this._fundMetaCache[code]) || null;
+        // 注意：_fundMetaCache 以 bare code（去 .OF 后缀）为键
+        meta = (this._fundMetaCache && this._fundMetaCache[this.bareCode(code)]) || null;
         // 经理名集合
         const mgrNames = new Set();
         if (repProduct && repProduct.manager) {
@@ -3636,7 +3637,7 @@ createApp({
         const cls = this.classifyProduct(p);
         if (counts[cls] != null) counts[cls]++;
         if (/定开|持有期|\d+年期|\d+个月期/.test(p.name || '')) counts['定开']++;
-        const meta = this._fundMetaCache && this._fundMetaCache[p.code];
+        const meta = this._fundMetaCache && this._fundMetaCache[this.bareCode(p.code)];
         if (meta && meta.inceptionDate) {
           const d = new Date(meta.inceptionDate).getTime();
           if (!isNaN(d) && (now - d) < 90 * 24 * 3600 * 1000) counts['新发']++;
@@ -3880,7 +3881,7 @@ createApp({
           if (filter === '定开') {
             if (!/定开|持有期|\d+年期|\d+个月期/.test(p.name || '')) continue;
           } else if (filter === '新发') {
-            const meta = this._fundMetaCache && this._fundMetaCache[p.code];
+            const meta = this._fundMetaCache && this._fundMetaCache[this.bareCode(p.code)];
             if (!meta || !meta.inceptionDate) continue;
             const d = new Date(meta.inceptionDate).getTime();
             if (isNaN(d) || (now - d) >= 90 * 24 * 3600 * 1000) continue;
@@ -4351,7 +4352,7 @@ createApp({
       const today = new Date().toISOString().slice(0, 10);
       // 构造导出数据 — 尽量使用已缓存的字段
       const rows = inst.products.map(p => {
-        const meta = (this._fundMetaCache && this._fundMetaCache[p.code]) || {};
+        const meta = (this._fundMetaCache && this._fundMetaCache[this.bareCode(p.code)]) || {};
         return {
           代码: p.code,
           名称: p.name || meta.name || '',
