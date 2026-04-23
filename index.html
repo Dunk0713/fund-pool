@@ -376,7 +376,8 @@
     }
     .result-card {
       position: relative;
-      padding: var(--sp-5) var(--sp-5) var(--sp-5) var(--sp-6);
+      padding: var(--sp-4) var(--sp-5) var(--sp-4) var(--sp-5);
+      padding-left: calc(var(--sp-5) + 4px);
       background: var(--paper);
       border: 1px solid var(--ink-200);
       border-radius: var(--r-lg);
@@ -385,8 +386,8 @@
       transform: translateY(4px);
       opacity: 0;
       display: flex;
-      align-items: flex-start;
-      gap: var(--sp-4);
+      flex-direction: column;
+      gap: var(--sp-2);
       box-shadow: var(--sh-1);
     }
     .result-card.visible {
@@ -404,38 +405,57 @@
     }
     .result-card.investable::before { background: var(--ok); }
     .result-card.not-investable::before { background: var(--warn); }
-    .result-icon {
-      flex-shrink: 0;
-      width: 28px;
-      height: 28px;
+    /* 头部：状态 chip */
+    .result-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px 3px 8px;
+      border-radius: 999px;
+      font-size: var(--fs-xs);
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      width: fit-content;
+      border: 1px solid transparent;
+    }
+    .result-card.investable .result-chip {
+      background: rgba(30, 132, 73, 0.08);
+      color: var(--ok);
+      border-color: rgba(30, 132, 73, 0.2);
+    }
+    .result-card.not-investable .result-chip {
+      background: var(--warn-soft);
+      color: var(--warn);
+      border-color: rgba(180, 106, 0, 0.2);
+    }
+    .result-chip .result-icon {
+      width: 14px;
+      height: 14px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      margin-top: 2px;
     }
-    .result-icon svg { width: 100%; height: 100%; display: block; }
-    .result-icon svg { width: 28px; height: 28px; stroke-width: 1.5; }
-    .result-card.investable .result-icon { color: var(--ok); }
-    .result-card.not-investable .result-icon { color: var(--warn); }
-    .result-body {
-      flex: 1;
-      min-width: 0;
-      text-align: left;
-    }
-    .result-text {
-      font-size: var(--fs-h1);
-      line-height: var(--lh-h1);
-      font-weight: 600;
-      margin-bottom: 4px;
-      color: var(--ink-900);
-      letter-spacing: -0.2px;
-    }
-    .result-card.investable .result-text { color: var(--ink-900); }
-    .result-card.not-investable .result-text { color: var(--ink-900); }
+    .result-chip .result-icon svg { width: 14px; height: 14px; stroke-width: 2.2; }
+    /* 主标题：基金代码 + 名称 */
     .result-detail {
+      font-size: 15px;
+      line-height: 1.45;
+      color: var(--ink-900);
+      font-weight: 600;
+      letter-spacing: -0.1px;
+    }
+    .result-detail .fund-code {
+      font-variant-numeric: tabular-nums;
+      color: var(--ink-700);
+      font-weight: 500;
+      margin-right: 6px;
+    }
+    /* 兼容：隐藏旧的大字 result-text（仅 not-investable 分支保留为提示语） */
+    .result-text.na-hint {
       font-size: var(--fs-sm);
-      line-height: var(--lh-sm);
       color: var(--text-secondary);
+      font-weight: 400;
+      line-height: var(--lh-sm);
     }
 
     /* ── Fund Tags (semantic 3-color system) ───────────────────── */
@@ -443,7 +463,7 @@
       display: flex;
       flex-wrap: wrap;
       gap: var(--sp-2);
-      margin-top: var(--sp-4);
+      margin-top: var(--sp-1);
       animation: fadeInTags var(--dur) var(--ease);
     }
     @keyframes fadeInTags {
@@ -484,7 +504,7 @@
     .fund-tags-loading {
       display: flex;
       gap: var(--sp-2);
-      margin-top: var(--sp-4);
+      margin-top: var(--sp-1);
     }
     .tag-skeleton {
       display: inline-block;
@@ -2044,12 +2064,14 @@
         class="result-card"
         :class="[queryResult, { visible: resultVisible }]"
       >
-        <div class="result-icon" v-html="queryResult === 'investable' ? ICONS.checkCircle : ICONS.xCircle"></div>
-        <div class="result-text">{{ queryResult === 'investable' ? '可投资' : '不可投资' }}</div>
-        <div class="result-detail" v-if="queryResult === 'investable' && matchedFund">
-          {{ matchedFund.code }} {{ matchedFund.name }}
+        <div class="result-chip">
+          <div class="result-icon" v-html="queryResult === 'investable' ? ICONS.checkCircle : ICONS.xCircle"></div>
+          <span>{{ queryResult === 'investable' ? '可投资' : '不可投资' }}</span>
         </div>
-        <div class="result-detail" v-if="queryResult === 'not-investable'">
+        <div class="result-detail" v-if="queryResult === 'investable' && matchedFund">
+          <span class="fund-code">{{ matchedFund.code }}</span>{{ matchedFund.name }}
+        </div>
+        <div class="result-text na-hint" v-if="queryResult === 'not-investable'">
           {{ selectedInstitution.name }} 的产品池中未找到该产品
         </div>
         <div class="fund-tags-loading" v-if="queryResult === 'investable' && fundTagsLoading">
@@ -3155,15 +3177,42 @@ function todayStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
+// 最近一个预期已发布的交易日：
+//   - 周一~周五 收盘后(>=20:00) → 今日
+//   - 周一~周五 收盘前           → 上个交易日（周一则上推到上周五）
+//   - 周六/周日                   → 上周五
+function latestExpectedNavDate() {
+  const d = new Date();
+  const dow = d.getDay(); // 0=Sun … 6=Sat
+  const hour = d.getHours();
+  const walk = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  if (dow === 0) walk.setDate(walk.getDate() - 2);          // 周日 → 周五
+  else if (dow === 6) walk.setDate(walk.getDate() - 1);     // 周六 → 周五
+  else if (hour < TRADING_DAY_CLOSE_HOUR) {
+    if (dow === 1) walk.setDate(walk.getDate() - 3);        // 周一收盘前 → 上周五
+    else walk.setDate(walk.getDate() - 1);                  // 其他工作日收盘前 → 昨日
+  }
+  // 其余情况（工作日收盘后）→ 今日
+  return `${walk.getFullYear()}-${String(walk.getMonth()+1).padStart(2,'0')}-${String(walk.getDate()).padStart(2,'0')}`;
+}
+function isClosedEndFund(meta) {
+  const name = (meta && meta.name) || '';
+  return /定开|持有期|封闭|\d+\s*年期|\d+\s*个月/.test(name);
+}
+function daysBetween(dateStr) {
+  if (!dateStr) return Infinity;
+  const ms = new Date(dateStr + 'T00:00:00').getTime();
+  if (isNaN(ms)) return Infinity;
+  return (Date.now() - ms) / 86400000;
+}
 function isFreshMeta(entry) {
   if (!entry || !entry.navDate) return false;
-  const today = todayStr();
-  // 1. navDate 等于今天 → 最新
-  if (entry.navDate === today) return true;
-  // 2. navDate 是往期交易日，但现在还未到今日收盘数据发布时段 → 也算新
-  const hours = new Date().getHours();
-  if (hours < TRADING_DAY_CLOSE_HOUR) return true;
-  return false;
+  // 封闭期/定开产品：净值按周/月发布，放宽到 14 天
+  if (isClosedEndFund(entry.meta)) {
+    return daysBetween(entry.navDate) <= 14;
+  }
+  // 普通开放式：navDate 不早于"最近一个预期已发布交易日"
+  return entry.navDate >= latestExpectedNavDate();
 }
 function cacheMeta(bare, meta) {
   const items = loadMetaCache();
@@ -4394,6 +4443,32 @@ createApp({
       this.managerSearchText = '';
       // 滚动到顶部
       window.scrollTo({ top: 0, behavior: 'smooth' });
+      // 后台拉取该经理旗下基金的近 1 年收益等 meta
+      this._backfillManagerFunds(name);
+    },
+
+    _backfillManagerFunds(name) {
+      const entry = this.managerIndex.find(m => m.name === name);
+      if (!entry) return;
+      if (!this._fundMetaCache) this._fundMetaCache = {};
+      let pending = 0;
+      entry.funds.forEach(f => {
+        const bare = this.bareCode(f.code);
+        if (this._fundMetaCache[bare]) return;
+        const persisted = readCachedMeta(bare);
+        if (persisted && persisted.meta && isFreshMeta(persisted)) {
+          this._fundMetaCache[bare] = persisted.meta;
+          pending++;
+          return;
+        }
+        pending++;
+        fetchFundMeta(bare).then(meta => {
+          this._fundMetaCache[bare] = meta;
+          try { cacheMeta(bare, meta); } catch(e) {}
+          this._fundMetaCacheVersion++;
+        }).catch(() => {});
+      });
+      if (pending) this._fundMetaCacheVersion++; // 立即触发一次重算，让 LS 命中立即显示
     },
 
     // ── M3-F2.2 Comparison toggle ────────────────────────────────
