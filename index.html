@@ -3882,6 +3882,8 @@ createApp({
         this.fundTags = [];
         this.fundTagsLoading = true;
         this.fundDetail = null;
+        this.fundDetailStale = false;
+        this.fundDetailRefreshing = false;
         this.loadFundTags(found.code);
       } else {
         this.matchedFund = null;
@@ -3955,11 +3957,16 @@ createApp({
       }
     },
 
-    // 手动刷新当前基金
+    // 手动刷新当前基金（同时清除内存缓存 + localStorage，保证真正发请求）
     refreshCurrentFund() {
       if (!this.matchedFund || this.fundDetailRefreshing) return;
       const bare = this.bareCode(this.matchedFund.code);
       if (this._fundMetaCache) delete this._fundMetaCache[bare];
+      try {
+        const items = loadMetaCache();
+        if (items[bare]) { delete items[bare]; saveMetaCache(items); }
+      } catch(e) {}
+      this.fundDetailStale = false;
       this.fundDetailRefreshing = true;
       this.loadFundTags(this.matchedFund.code);
     },
