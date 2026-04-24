@@ -3082,20 +3082,60 @@ function fetchFundType(bare) {
     if (typeof ftype === 'string' && ftype.trim()) return ftype.trim().replace(/基金$/, '');
     return null;
   }
-  // Map not ready yet — return promise
-  return _loadFundTypeMap().then(() => {
+  // Map not ready yet — return promise, capped at 5s to avoid hanging loadFundTags
+  const real = _loadFundTypeMap().then(() => {
     if (!_fundTypeMap) return null;
     const ftype = _fundTypeMap.get(bare);
     if (typeof ftype === 'string' && ftype.trim()) return ftype.trim().replace(/基金$/, '');
     return null;
   });
+  return Promise.race([
+    real,
+    new Promise(r => setTimeout(() => r(null), 5000))
+  ]);
+}
+
+// ── 分类权威函数：一次返回一级(primary, for chip)/二级(secondary, for tag) ──
+//   消除 classifyProduct / pingzhongdata 派生里顺序敏感的 regex 降级陷阱
+//   e.g. "指数型-固收" 必须归「债券」而非「股票」
+function resolveFundClassification(rawType, name) {
+  const t = (rawType || '').trim();
+  const nm = (name || '').trim();
+  const secondary = t;
+  let primary = '其他';
+  if (/QDII|海外|全球|美国|港股通/i.test(t + nm)) {
+    primary = 'QDII';
+  } else if (/货币/.test(t) || (!t && /货币|现金/.test(nm))) {
+    primary = '货币';
+  } else if (/^指数型\s*[-－]/.test(t)) {
+    const sub = t.replace(/^指数型\s*[-－]\s*/, '');
+    if (/固收|债/.test(sub)) primary = '债券';
+    else if (/股票/.test(sub)) primary = '股票';
+    else if (/商品/.test(sub)) primary = '其他';
+    else primary = '股票';
+  } else if (/债券型|纯债|可转债|混合债券|短期纯债|中长期纯债/.test(t)) {
+    primary = '债券';
+  } else if (/混合型|偏股混合|偏债混合|灵活配置|平衡混合/.test(t)) {
+    primary = '混合';
+  } else if (/股票型|被动指数|增强指数|行业主题/.test(t)) {
+    primary = '股票';
+  } else if (!t) {
+    if (/债|纯债|信用|利率/.test(nm)) primary = '债券';
+    else if (/指数|ETF|LOF|增强/i.test(nm)) primary = '股票';
+    else if (/混合|灵活|平衡|配置/.test(nm)) primary = '混合';
+    else if (/股|成长|价值|精选|优选/.test(nm)) primary = '股票';
+  }
+  return { primary, secondary };
 }
 
 // ── Fetch fund top holdings (前十大持仓) ──────────────────────────────────
 async function fetchFundHoldings(bare) {
+  const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch(e) {} }, 6000) : null;
   try {
     const resp = await fetch(
-      'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNInverstPosition?plat=Android&appType=ttjj&product=EFund&Version=1&deviceid=1&FCODE=' + bare
+      'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNInverstPosition?plat=Android&appType=ttjj&product=EFund&Version=1&deviceid=1&FCODE=' + bare,
+      ctrl ? { signal: ctrl.signal } : undefined
     );
     if (!resp.ok) return [];
     const json = await resp.json();
@@ -3107,6 +3147,8 @@ async function fetchFundHoldings(bare) {
     }));
   } catch (_) {
     return [];
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -3125,21 +3167,25 @@ class PromiseQueue {
   constructor(concurrency = 4) {
     this.concurrency = concurrency;
     this.running = 0;
-    this.queue = [];
+    this.high = [];
+    this.low = [];
   }
-  add(factory) {
+  add(factory, opts) {
+    opts = opts || {};
     return new Promise((resolve, reject) => {
-      this.queue.push({ factory, resolve, reject });
+      const item = { factory, resolve, reject };
+      if (opts.priority === 'high') this.high.push(item);
+      else this.low.push(item);
       this._tick();
     });
   }
   _tick() {
-    while (this.running < this.concurrency && this.queue.length) {
-      const { factory, resolve, reject } = this.queue.shift();
+    while (this.running < this.concurrency && (this.high.length || this.low.length)) {
+      const item = this.high.length ? this.high.shift() : this.low.shift();
       this.running++;
-      Promise.resolve().then(factory).then(
-        v => { this.running--; resolve(v); this._tick(); },
-        e => { this.running--; reject(e); this._tick(); }
+      Promise.resolve().then(item.factory).then(
+        v => { this.running--; item.resolve(v); this._tick(); },
+        e => { this.running--; item.reject(e); this._tick(); }
       );
     }
   }
@@ -3197,7 +3243,8 @@ function latestExpectedNavDate() {
 }
 function isClosedEndFund(meta) {
   const name = (meta && meta.name) || '';
-  return /定开|持有期|封闭|\d+\s*年期|\d+\s*个月/.test(name);
+  // 只识别真正的定开/持有期/封闭运作产品；避免把 "0-3年" 等久期描述误判
+  return /定开|持有期|封闭运作|封闭期|\d+\s*个月持有|\d+\s*年持有/.test(name);
 }
 function daysBetween(dateStr) {
   if (!dateStr) return Infinity;
@@ -3242,7 +3289,7 @@ function fetchFundMeta(bare, opts) {
       if(settled) return;
       settled = true;
       clearTimeout(timer);
-      // Derive fund type from asset allocation
+      // Derive fund type from asset allocation (二级分类初值，稍后 fetchFundType 可覆盖)
       let fundType = null;
       const aa = window.Data_assetAllocation;
       if (window.ishb) {
@@ -3259,6 +3306,8 @@ function fetchFundMeta(bare, opts) {
         else if (latestStock > 0 || latestBond > 0) fundType = '混合型-平衡';
         else fundType = '其他';
       }
+      // 统一口径：通过权威表规范化（同时得出一级分类，下游可直接用）
+      const _cls = resolveFundClassification(fundType, window.fS_name);
       // Derive scale from Data_fluctuationScale
       let scaleValue = null;
       const fs = window.Data_fluctuationScale;
@@ -3337,6 +3386,7 @@ function fetchFundMeta(bare, opts) {
       const meta = {
         name: window.fS_name,
         type: fundType,
+        primary: _cls.primary,
         scale: scaleValue,
         managers: window.Data_currentFundManager,
         return1y: window.syl_1n,
@@ -3352,7 +3402,7 @@ function fetchFundMeta(bare, opts) {
     script.onerror = () => { if(!settled){ settled=true; clearTimeout(timer); cleanup(); reject(new Error('load failed')); } };
     function cleanup() { if (script.parentNode) script.parentNode.removeChild(script); }
     document.head.appendChild(script);
-  }));
+  }), { priority: opts.priority === 'low' ? 'low' : 'high' });
   return curr;
 }
 
@@ -3366,12 +3416,16 @@ function extractManagerNames(meta) {
 // ── Generate fund characteristic tags ─────────────────────────────────────
 function generateFundTags(meta) {
   const tags = [];
-  // 1. Fund type (二级分类)
-  if (meta.type) {
-    let typeLabel = meta.type;
+  // 1. Fund type (二级分类；无二级则回退到一级分类)
+  const typeText = meta.type || meta.primary
+    || (resolveFundClassification('', meta.name).primary);
+  if (typeText && typeText !== '其他') {
+    let typeLabel = typeText;
     if (meta.name && meta.name.includes('ETF联接')) typeLabel += ' ETF联接';
     else if (meta.name && /LOF/i.test(meta.name)) typeLabel += ' LOF';
     tags.push({ label: typeLabel, color: 'blue' });
+  } else if (typeText) {
+    tags.push({ label: typeText, color: 'blue' });
   }
   // 2. Fund scale
   if (meta.scale != null) {
@@ -3475,6 +3529,7 @@ createApp({
       fundDetail: null,
       fundDetailStale: false,       // 是否显示的是陈旧缓存
       fundDetailRefreshing: false,  // 后台刷新中
+      _refreshToken: 0,             // 刷新单调版本号（watchdog 防竞态）
       _fundMetaCacheVersion: 0,     // 供 managerIndex 等 computed 感知 meta 缓存更新
       _fundQueryDebounceTimer: null,
 
@@ -3747,8 +3802,8 @@ createApp({
         const bare = this.bareCode(code);
         const entry = items[bare];
         if (entry && isFreshMeta(entry)) return; // 已新鲜 → 跳过
-        // 进队列，不 await — 并发池自动 4 路处理
-        fetchFundMeta(bare).catch(() => {});
+        // 进队列，不 await — 并发池自动 4 路处理（低优先级，让位用户触发的请求）
+        fetchFundMeta(bare, { priority: 'low' }).catch(() => {});
       });
     },
 
@@ -3977,7 +4032,8 @@ createApp({
           this.fundDetailRefreshing = true;
         }
       } else {
-        this.fundDetailRefreshing = false;
+        // 无持久化缓存：不清 refreshing（refreshCurrentFund 可能刚置 true），
+        // 交给后续网络分支或 catch 负责复位
         this.fundDetailStale = false;
       }
       if (!needRefresh) return;
@@ -4018,7 +4074,20 @@ createApp({
       } catch(e) {}
       this.fundDetailStale = false;
       this.fundDetailRefreshing = true;
-      this.loadFundTags(this.matchedFund.code);
+      const token = ++this._refreshToken;
+      const watchdog = setTimeout(() => {
+        // 仅当版本号未被新刷新顶掉、且仍在 loading 时才复位
+        if (this._refreshToken === token && this.fundDetailRefreshing) {
+          this.fundDetailRefreshing = false;
+          this.showToast('刷新超时，请稍后重试');
+        }
+      }, 12000);
+      const p = this.loadFundTags(this.matchedFund.code);
+      if (p && typeof p.finally === 'function') {
+        p.finally(() => clearTimeout(watchdog));
+      } else {
+        // 兜底：即便不是 Promise，也在 watchdog 超时后自然复位
+      }
     },
 
     // ═══ Manage View ═════════════════════════════════════════════
@@ -4271,24 +4340,8 @@ createApp({
     },
 
     classifyProduct(p) {
-      // Use persisted fund type (二级分类) if available
-      if (p.type) {
-        const t = p.type;
-        if (/QDII|海外|全球/.test(t)) return 'QDII';
-        if (/货币/.test(t)) return '货币';
-        if (/债/.test(t)) return '债券';
-        if (/股票|指数/.test(t)) return '股票';
-        if (/混合|灵活|平衡|偏股|偏债/.test(t)) return '混合';
-        return '其他';
-      }
-      // Fallback: name-based heuristic
-      const nm = (p.name || '').toUpperCase();
-      if (/QDII|海外|全球|美国|港股通/.test(nm)) return 'QDII';
-      if (/货币|现金/.test(nm)) return '货币';
-      if (/债|纯债|信用|利率/.test(nm)) return '债券';
-      if (/股票|指数|ETF|LOF|量化|成长|价值/.test(nm)) return '股票';
-      if (/混合|灵活|平衡|配置|稳健|优选|精选/.test(nm)) return '混合';
-      return '其他';
+      // 统一走权威表 —— 一次产出一级分类（chip 筛选用）
+      return resolveFundClassification(p && p.type, p && p.name).primary;
     },
 
     // ── Risk Badges (M2) ─────────────────────────────────────────
