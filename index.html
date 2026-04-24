@@ -3686,19 +3686,14 @@ createApp({
     quickFilterChips() {
       if (!this.selectedInstitution) return [];
       const products = this.selectedInstitution.products || [];
-      const counts = { all: products.length, 债券: 0, QDII: 0, 股票: 0, 混合: 0, 货币: 0, 其他: 0, 定开: 0, 新发: 0 };
-      const now = Date.now();
+      // chip 仅表达"一级分类"（按投资标的性质）——
+      // 流动性结构（定开）/ 成立时间（新发）属于正交维度，不应与一级分类并排
+      const counts = { all: products.length, 债券: 0, QDII: 0, 股票: 0, 混合: 0, 货币: 0, 其他: 0 };
       for (const p of products) {
         const cls = this.classifyProduct(p);
         if (counts[cls] != null) counts[cls]++;
-        if (/定开|持有期|\d+年期|\d+个月期/.test(p.name || '')) counts['定开']++;
-        const meta = this._fundMetaCache && this._fundMetaCache[this.bareCode(p.code)];
-        if (meta && meta.inceptionDate) {
-          const d = new Date(meta.inceptionDate).getTime();
-          if (!isNaN(d) && (now - d) < 90 * 24 * 3600 * 1000) counts['新发']++;
-        }
       }
-      const order = ['all', '债券', '股票', '混合', 'QDII', '货币', '新发', '定开', '其他'];
+      const order = ['all', '债券', '股票', '混合', 'QDII', '货币', '其他'];
       const labelMap = { all: '全部' };
       return order
         .filter(k => counts[k] > 0)
@@ -3918,7 +3913,6 @@ createApp({
         this.fundSuggestions = [];
         return;
       }
-      const now = Date.now();
       const q = hasQ ? normalizeCode(this.fundQuery.trim()) : '';
       // M4 · 纯数字代码走 O(1) 索引命中路径
       if (hasQ && /^\d{3,6}$/.test(q) && filter === 'all'
@@ -3933,16 +3927,7 @@ createApp({
       for (const p of this.selectedInstitution.products) {
         // 先应用 quickFilter
         if (filter !== 'all') {
-          if (filter === '定开') {
-            if (!/定开|持有期|\d+年期|\d+个月期/.test(p.name || '')) continue;
-          } else if (filter === '新发') {
-            const meta = this._fundMetaCache && this._fundMetaCache[this.bareCode(p.code)];
-            if (!meta || !meta.inceptionDate) continue;
-            const d = new Date(meta.inceptionDate).getTime();
-            if (isNaN(d) || (now - d) >= 90 * 24 * 3600 * 1000) continue;
-          } else {
-            if (this.classifyProduct(p) !== filter) continue;
-          }
+          if (this.classifyProduct(p) !== filter) continue;
         }
         if (!hasQ) {
           results.push({ ...p, score: 1 });
