@@ -1765,9 +1765,72 @@
       border-radius: var(--r-sm);
       font-size: var(--fs-xs);
     }
-    /* 经理→基金行：覆盖机构以小标签形式列出，方便预约路演 */
-    .inst-cover-col { min-width: 160px; }
-    .inst-pill-row {
+    /* 经理→基金行：覆盖机构 = 数字徽章，点击弹出小卡片显示具体机构名 */
+    .inst-count-cell {
+      position: relative;
+      overflow: visible;
+    }
+    .inst-count-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 28px;
+      height: 24px;
+      padding: 0 8px;
+      border: 1px solid var(--ink-200);
+      border-radius: 12px;
+      background: #fff;
+      color: var(--ink-700);
+      font-size: var(--fs-sm);
+      font-variant-numeric: tabular-nums;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .inst-count-btn:hover:not(:disabled) {
+      background: rgba(59, 130, 246, 0.06);
+      border-color: rgba(59, 130, 246, 0.4);
+      color: #1e40af;
+    }
+    .inst-count-btn.active {
+      background: #1e40af;
+      border-color: #1e40af;
+      color: #fff;
+    }
+    .inst-count-btn:disabled {
+      cursor: default;
+      opacity: 0.5;
+    }
+    .inst-cover-popover {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 8px;
+      z-index: 50;
+      min-width: 180px;
+      max-width: 280px;
+      padding: 10px 12px;
+      background: #fff;
+      border: 1px solid var(--ink-200);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+    }
+    .inst-cover-popover-arrow {
+      position: absolute;
+      top: -5px;
+      right: 16px;
+      width: 10px;
+      height: 10px;
+      background: #fff;
+      border-left: 1px solid var(--ink-200);
+      border-top: 1px solid var(--ink-200);
+      transform: rotate(45deg);
+    }
+    .inst-cover-popover-title {
+      font-size: var(--fs-xs);
+      color: var(--ink-500);
+      margin-bottom: 6px;
+      letter-spacing: 0.3px;
+    }
+    .inst-cover-popover-list {
       display: flex;
       flex-wrap: wrap;
       gap: 4px;
@@ -1777,10 +1840,9 @@
       padding: 2px 8px;
       background: rgba(59, 130, 246, 0.08);
       color: #1e40af;
-      border: 1px solid rgba(59, 130, 246, 0.2);
       border-radius: 999px;
       font-size: var(--fs-xs);
-      line-height: 1.4;
+      line-height: 1.5;
       white-space: nowrap;
     }
 
@@ -2561,7 +2623,7 @@
           </div>
           <table class="manager-funds-table">
             <thead>
-              <tr><th>代码</th><th>名称</th><th>类型</th><th class="num-col">近1年</th><th>覆盖机构</th></tr>
+              <tr><th>代码</th><th>名称</th><th>类型</th><th class="num-col">近1年</th><th class="num-col">覆盖机构</th></tr>
             </thead>
             <tbody>
               <tr v-for="row in selectedManagerFunds" :key="row.code">
@@ -2569,11 +2631,25 @@
                 <td>{{ row.name }}</td>
                 <td><span class="type-pill">{{ row.type || '-' }}</span></td>
                 <td class="num-col num" :class="returnClass(row.oneYearReturn)">{{ formatReturn(row.oneYearReturn) }}</td>
-                <td class="inst-cover-col">
-                  <div class="inst-pill-row" v-if="row.instNames && row.instNames.length">
-                    <span class="inst-pill" v-for="iname in row.instNames" :key="iname">{{ iname }}</span>
+                <td class="num-col inst-count-cell">
+                  <button
+                    class="inst-count-btn"
+                    :class="{ active: instCoverOpenCode === row.code }"
+                    @click.stop="toggleInstCover(row.code)"
+                    :disabled="!row.instNames || row.instNames.length === 0"
+                    :title="row.instNames && row.instNames.length ? '点击查看覆盖的机构' : ''"
+                  >{{ row.instCount }}</button>
+                  <div
+                    v-if="instCoverOpenCode === row.code && row.instNames && row.instNames.length"
+                    class="inst-cover-popover"
+                    @click.stop
+                  >
+                    <div class="inst-cover-popover-arrow"></div>
+                    <div class="inst-cover-popover-title">覆盖机构</div>
+                    <div class="inst-cover-popover-list">
+                      <span class="inst-pill" v-for="iname in row.instNames" :key="iname">{{ iname }}</span>
+                    </div>
                   </div>
-                  <span v-else class="num">{{ row.instCount }}</span>
                 </td>
               </tr>
             </tbody>
@@ -3617,6 +3693,8 @@ createApp({
       // M3-F1 Manager tab
       managerSearchText: '',
       selectedManagerName: null,
+      // 当前展开"覆盖机构"小卡片的基金代码（同一时间只展开一个）
+      instCoverOpenCode: null,
 
       // M3-F2.1 Quick filter chips
       quickFilter: 'all',
@@ -4625,10 +4703,16 @@ createApp({
       this.selectedManagerName = name;
       this.currentView = 'manager';
       this.managerSearchText = '';
+      this.instCoverOpenCode = null;  // 切换经理时关掉之前的弹窗
       // 滚动到顶部
       window.scrollTo({ top: 0, behavior: 'smooth' });
       // 后台拉取该经理旗下基金的近 1 年收益等 meta
       this._backfillManagerFunds(name);
+    },
+
+    // 点击"覆盖机构"数字徽章 → 弹出/收起小卡片
+    toggleInstCover(code) {
+      this.instCoverOpenCode = this.instCoverOpenCode === code ? null : code;
     },
 
     _backfillManagerFunds(name) {
@@ -5312,6 +5396,11 @@ createApp({
       }
       if (!e.target.closest('.export-menu-wrap')) {
         this.exportMenuInstId = null;
+      }
+      // 点击「覆盖机构」徽章/弹窗以外的区域 → 关闭
+      if (this.instCoverOpenCode != null
+          && !e.target.closest('.inst-count-cell')) {
+        this.instCoverOpenCode = null;
       }
     });
 
