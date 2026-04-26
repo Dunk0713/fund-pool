@@ -3861,6 +3861,9 @@ createApp({
       });
       // M4 · idle-time index build for fast lookup on large pools
       this._buildInstIndex(inst);
+      // 后台静默补全经理名（低优先级，不阻塞 UI，不显示 toast）
+      // 保证用户在查询视图可以直接按经理名搜索，无需先到管理页触发 backfill
+      this._silentBackfillManagers(inst);
     },
 
     // ── M4: 搜索索引（code hashmap + 2-gram 倒排） ──────────────
@@ -3943,9 +3946,24 @@ createApp({
           results.push({ ...p, score: 1 });
           continue;
         }
-        const nameMatch = fuzzyMatch(this.fundQuery.trim(), p.name);
+        const qTrim = this.fundQuery.trim();
+        const nameMatch = fuzzyMatch(qTrim, p.name);
         const codeMatch = fuzzyMatch(q, p.code);
-        const mgrMatch = p.manager ? fuzzyMatch(this.fundQuery.trim(), p.manager) : { match: false, score: 0 };
+        // 优先用产品对象上已回写的 manager 字段；
+        // 若未回写，则从内存 meta 缓存中读取 managerDetails 做匹配，
+        // 保证即便 backfill 未跑过，只要该产品被查看过就能按经理名搜索到
+        let mgrMatch = p.manager ? fuzzyMatch(qTrim, p.manager) : { match: false, score: 0 };
+        if (!mgrMatch.match && this._fundMetaCache) {
+          const cached = this._fundMetaCache[this.bareCode(p.code)];
+          if (cached && Array.isArray(cached.managerDetails)) {
+            for (const mgr of cached.managerDetails) {
+              if (mgr.name) {
+                const m = fuzzyMatch(qTrim, mgr.name);
+                if (m.score > mgrMatch.score) mgrMatch = m;
+              }
+            }
+          }
+        }
         const bestScore = Math.max(nameMatch.score, codeMatch.score, mgrMatch.score);
         if (nameMatch.match || codeMatch.match || mgrMatch.match) {
           results.push({ ...p, score: bestScore });
@@ -4023,6 +4041,17 @@ createApp({
           this._fundMetaCache[bare] = persisted.meta;
           this.fundDetailRefreshing = false;
           needRefresh = false;
+          // 回写经理名（LS 命中路径）
+          const mgrNamesFromLS = extractManagerNames(persisted.meta);
+          if (mgrNamesFromLS && this.selectedInstitution) {
+            const prodLS = this.selectedInstitution.products.find(
+              pp => this.bareCode(pp.code) === bare
+            );
+            if (prodLS && !prodLS.manager) {
+              prodLS.manager = mgrNamesFromLS;
+              this.saveInst(this.selectedInstitution).catch(() => {});
+            }
+          }
         } else {
           this.fundDetailRefreshing = true;
         }
@@ -4044,6 +4073,17 @@ createApp({
         this._fundMetaCache[bare] = meta;
         this._fundMetaCacheVersion++;
         try { cacheMeta(bare, meta); } catch(e) {}
+        // 将经理名回写到产品对象，使查询视图的经理名搜索在下次打开时仍可命中
+        const mgrNamesFromMeta = extractManagerNames(meta);
+        if (mgrNamesFromMeta && this.selectedInstitution) {
+          const prodInInst = this.selectedInstitution.products.find(
+            pp => this.bareCode(pp.code) === bare
+          );
+          if (prodInInst && !prodInInst.manager) {
+            prodInInst.manager = mgrNamesFromMeta;
+            this.saveInst(this.selectedInstitution).catch(() => {});
+          }
+        }
         if (this.matchedFund && this.bareCode(this.matchedFund.code) === bare) {
           this.fundTags = generateFundTags(meta);
           this.fundDetail = meta;
@@ -4231,6 +4271,36 @@ createApp({
       this.backfillManagerLoading = false;
       this.backfillManagerProgress = '';
       this.showToast(`经理补全完成：${filled}/${missing.length} 成功`);
+    },
+
+    // 静默后台补全经理名（查询视图选机构时触发，不显示进度/toast）
+    // 使用低优先级队列逐只拉取，不抢占用户触发的刷新槽位
+    async _silentBackfillManagers(inst) {
+      // 防止同一机构重复触发
+      if (!inst || inst._silentBackfillRunning) return;
+      const missing = inst.products.filter(p => !p.manager);
+      if (missing.length === 0) return;
+      inst._silentBackfillRunning = true;
+      let filled = 0;
+      for (const p of missing) {
+        // 若用户切换了机构，则中止本次补全
+        if (this.selectedInstitution && this.selectedInstitution.id !== inst.id) break;
+        try {
+          const meta = await fetchFundMeta(this.bareCode(p.code), { priority: 'low' });
+          const names = extractManagerNames(meta);
+          if (names) { p.manager = names; filled++; }
+          if (!p.type && meta && meta.type) p.type = meta.type;
+        } catch (_) {}
+      }
+      inst._silentBackfillRunning = false;
+      if (filled > 0) {
+        inst.updatedAt = new Date().toISOString();
+        await this.saveInst(inst).catch(() => {});
+        // 如果查询框有内容，重新跑一次搜索让结果刷新
+        if (this.selectedInstitution && this.selectedInstitution.id === inst.id && this.fundQuery.trim()) {
+          this._doFundQuery();
+        }
+      }
     },
 
     async removeProduct(inst, code) {
