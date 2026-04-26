@@ -2646,11 +2646,15 @@
       <div class="section-title">PDF 导入</div>
       <div
         class="upload-zone"
+        :class="{dragover: pdfDragover}"
         @click="$refs.pdfInput.click()"
+        @dragover.prevent="pdfDragover = true"
+        @dragleave="pdfDragover = false"
+        @drop.prevent="handlePdfDrop"
       >
         <div class="upload-icon">📑</div>
         <div class="upload-title">上传 PDF 文件</div>
-        <div class="upload-desc">自动提取PDF中的基金代码和名称</div>
+        <div class="upload-desc">点击选择或拖拽 .pdf 文件</div>
         <input type="file" ref="pdfInput" accept=".pdf" @change="handlePdfUpload">
       </div>
 
@@ -2658,11 +2662,15 @@
       <div class="section-title">图片 OCR 识别</div>
       <div
         class="upload-zone"
+        :class="{dragover: imageDragover}"
         @click="$refs.imageInput.click()"
+        @dragover.prevent="imageDragover = true"
+        @dragleave="imageDragover = false"
+        @drop.prevent="handleImageDrop"
       >
         <div class="upload-icon">📷</div>
         <div class="upload-title">上传产品池图片</div>
-        <div class="upload-desc">支持拍照或从相册选择</div>
+        <div class="upload-desc">点击选择、拍照或拖拽图片文件</div>
         <input type="file" ref="imageInput" accept="image/*" capture="environment" @change="handleImageOCR">
       </div>
 
@@ -3520,6 +3528,8 @@ createApp({
       showImportInstDropdown: false,
       importTargetInst: null,
       excelDragover: false,
+      pdfDragover: false,
+      imageDragover: false,
       isProcessing: false,
       ocrProgress: 0,
       ocrStatus: '',
@@ -4622,6 +4632,65 @@ createApp({
       return inst;
     },
 
+    // ── 共用：从一段文本里提取所有 (基金代码, 名称) 对 ────────────
+    //   关键：用 matchAll 抓全部代码（不再只取第一个），
+    //   用相邻代码之间的文本切片做名字提取，避免相邻产品互相吞名。
+    _extractFundEntries(rawText) {
+      // 完整的 6 位带后缀；6 位 + OF；以及 6 位末尾跟分隔/非数字字符
+      const RE = /(\d{6}\s*[.。·]\s*[A-Za-z]{2}|\d{6}\s*(?:OF|of|oF|Of)|\d{6}(?=[^\d]|$))/g;
+      const entries = [];
+      const seen = new Set();
+      const lines = String(rawText || '').split(/\n+/);
+      for (let raw of lines) {
+        if (!raw) continue;
+        const line = this.cleanOcrText(raw);
+        if (!line) continue;
+        const matches = [...line.matchAll(RE)];
+        if (matches.length === 0) continue;
+        for (let mi = 0; mi < matches.length; mi++) {
+          const m = matches[mi];
+          const codeRaw = m[1].replace(/\s+/g, '');
+          const code = this.normalizeCode(codeRaw);
+          if (seen.has(code)) continue;
+          // 名字候选：本次代码末尾 → 下个代码起点之间的文本
+          const startIdx = m.index + m[0].length;
+          const endIdx = mi + 1 < matches.length ? matches[mi + 1].index : line.length;
+          let between = line.slice(startIdx, endIdx);
+          // 第一个代码若后面无文字，回退到代码之前的文本
+          let nameCand = this._firstChineseName(between);
+          if (!nameCand && mi === 0) {
+            const before = line.slice(0, m.index);
+            nameCand = this._lastChineseName(before);
+          }
+          // 仍无名字，再尝试从代码之后最近的中文起头串里拿
+          if (!nameCand) nameCand = this._firstChineseName(between);
+          seen.add(code);
+          entries.push({
+            code,
+            name: (nameCand || '未识别名称').replace(/\s+/g, ''),
+            selected: true,
+            verifyStatus: null,
+            officialName: '',
+            nameCorrected: false,
+          });
+        }
+      }
+      return entries;
+    },
+    // 取字符串里第一个 "中文/英文 起头 + 中英数字" 的连续片段
+    _firstChineseName(s) {
+      if (!s) return '';
+      // 先丢弃前导分隔
+      const cleaned = s.replace(/^[\s|｜,，、;；()（）\[\]【】\-—:：\/\\.]+/, '');
+      const m = cleaned.match(/[一-龥][一-龥A-Za-z0-9（）()]*/);
+      return m ? m[0] : '';
+    },
+    _lastChineseName(s) {
+      if (!s) return '';
+      const m = s.match(/[一-龥][一-龥A-Za-z0-9（）()]*$/);
+      return m ? m[0] : '';
+    },
+
     // ── Excel ────────────────────────────────────────────────────
     handleExcelUpload(event) {
       const file = event.target.files[0];
@@ -4642,28 +4711,63 @@ createApp({
         const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
         let codeCol = -1, nameCol = -1, startRow = 0;
-        for (let r = 0; r < Math.min(rows.length, 10); r++) {
+        // 在前 20 行内找表头（之前是 10 行，太紧）
+        for (let r = 0; r < Math.min(rows.length, 20); r++) {
           if (!rows[r]) continue;
           const row = rows[r].map(c => String(c || ''));
+          let localCode = -1, localName = -1;
           for (let c = 0; c < row.length; c++) {
             const cell = row[c];
-            if (cell.includes('代码') || cell.includes('编码') || cell.includes('基金代码')) codeCol = c;
-            if (cell.includes('名称') || cell.includes('基金名') || cell.includes('产品名')) nameCol = c;
+            if (localCode < 0 && /代码|编码|代号|证券代码/.test(cell)) localCode = c;
+            if (localName < 0 && /名称|基金名|产品名|简称|证券简称/.test(cell)) localName = c;
           }
-          if (codeCol >= 0 && nameCol >= 0) { startRow = r + 1; break; }
+          if (localCode >= 0 && localName >= 0) {
+            codeCol = localCode; nameCol = localName; startRow = r + 1;
+            break;
+          }
         }
-        if (codeCol < 0) { codeCol = 0; nameCol = 1; startRow = 1; }
-        if (nameCol < 0) nameCol = codeCol === 0 ? 1 : 0;
+        // 仍未找到表头：尝试通过"哪一列大多数像 6 位代码"自动定位
+        if (codeCol < 0) {
+          const colHits = {};
+          const probe = Math.min(rows.length, 30);
+          for (let r = 0; r < probe; r++) {
+            if (!rows[r]) continue;
+            for (let c = 0; c < rows[r].length; c++) {
+              const v = String(rows[r][c] || '').trim().replace(/'/g, '');
+              if (/^\d{6}(\.\w{2,3})?$/.test(v) || /^\d{6}$/.test(v)) {
+                colHits[c] = (colHits[c] || 0) + 1;
+              }
+            }
+          }
+          const best = Object.entries(colHits).sort((a, b) => b[1] - a[1])[0];
+          if (best && best[1] >= 2) {
+            codeCol = parseInt(best[0], 10);
+            startRow = 0;
+          } else {
+            codeCol = 0; startRow = 1;
+          }
+          if (nameCol < 0) nameCol = codeCol === 0 ? 1 : 0;
+        }
 
         const products = [];
+        const seen = new Set();
         for (let r = startRow; r < rows.length; r++) {
           if (!rows[r]) continue;
           let code = String(rows[r][codeCol] || '').trim().replace(/'/g, '');
-          const name = String(rows[r][nameCol] || '').trim().replace(/\s+/g, '');
-          if (code && name) {
-            code = this.normalizeCode(code);
-            products.push({ code, name, selected: true, verifyStatus: null, officialName: '', nameCorrected: false });
+          let name = String(rows[r][nameCol] || '').trim().replace(/\s+/g, '');
+          // 代码不在预期列时，尝试整行扫一下 6 位数字代码
+          if (!/^\d{3,6}(\.\w{2,3})?$/.test(code)) {
+            for (let c = 0; c < rows[r].length; c++) {
+              const v = String(rows[r][c] || '').trim().replace(/'/g, '');
+              if (/^\d{6}(\.\w{2,3})?$/.test(v)) { code = v; break; }
+            }
           }
+          if (!code) continue;
+          code = this.normalizeCode(code);
+          if (seen.has(code)) continue;
+          seen.add(code);
+          // 允许名称缺失：保留代码，名字由后续核对补全
+          products.push({ code, name: name || '', selected: true, verifyStatus: null, officialName: '', nameCorrected: false });
         }
 
         if (products.length === 0) {
@@ -4679,11 +4783,22 @@ createApp({
     },
 
     // ── PDF (lazy-loaded) ────────────────────────────────────────
-    async handlePdfUpload(event) {
+    handlePdfUpload(event) {
       const file = event.target.files[0];
-      if (!file) return;
       event.target.value = '';
-
+      if (file) this._parsePdfFile(file);
+    },
+    handlePdfDrop(event) {
+      this.pdfDragover = false;
+      const file = event.dataTransfer && event.dataTransfer.files[0];
+      if (!file) return;
+      if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') {
+        this.showToast('请拖入 PDF 文件');
+        return;
+      }
+      this._parsePdfFile(file);
+    },
+    async _parsePdfFile(file) {
       this.isProcessing = true;
       this.ocrProgress = 0;
       this.ocrStatus = '正在加载PDF引擎...';
@@ -4702,35 +4817,24 @@ createApp({
           this.ocrStatus = `解析第 ${i}/${totalPages} 页...`;
           const page = await pdf.getPage(i);
           const content = await page.getTextContent();
-          const pageText = content.items.map(item => item.str).join(' ');
-          fullText += pageText + '\n';
+          // 按 Y 坐标重组行（PDF 坐标 Y 自下向上），同 Y 的 item 按 X 升序拼接
+          const linesMap = new Map();
+          for (const it of content.items) {
+            if (!it || !it.str) continue;
+            const y = Math.round((it.transform && it.transform[5]) || 0);
+            const x = (it.transform && it.transform[4]) || 0;
+            if (!linesMap.has(y)) linesMap.set(y, []);
+            linesMap.get(y).push({ x, str: it.str });
+          }
+          const ys = [...linesMap.keys()].sort((a, b) => b - a); // 顶部 → 底部
+          for (const y of ys) {
+            const items = linesMap.get(y).sort((a, b) => a.x - b.x);
+            fullText += items.map(it => it.str).join(' ') + '\n';
+          }
+          fullText += '\n';
         }
 
-        const products = [];
-        const seen = new Set();
-        const lines = fullText.split('\n');
-        for (let line of lines) {
-          line = this.cleanOcrText(line);
-          const regex = /(\d{6}\s*[.\u3002·]\s*\w{2}|\d{6}\s*(?:OF|of|oF|Of)|\d{3,6}(?=[\s\u4e00-\u9fa5|｜,，;；）)\]\}]|$))/g;
-          let match;
-          while ((match = regex.exec(line)) !== null) {
-            const code = this.normalizeCode(match[1]);
-            if (seen.has(code)) continue;
-            seen.add(code);
-            const parts = line.split(match[0]);
-            let name = '';
-            const after = (parts[1] || '').replace(/[\s|｜,，、;；()（）]+/g, '').trim();
-            const before = (parts[0] || '').replace(/[\s|｜,，、;；()（）]+/g, '').trim();
-            const chineseAfter = after.match(/[\u4e00-\u9fa5A-Za-z][\u4e00-\u9fa5A-Za-z0-9]+/);
-            const chineseBefore = before.match(/[\u4e00-\u9fa5A-Za-z][\u4e00-\u9fa5A-Za-z0-9]*$/);
-            if (chineseAfter) {
-              name = chineseAfter[0];
-            } else if (chineseBefore) {
-              name = chineseBefore[0];
-            }
-            products.push({ code, name: name.replace(/\s+/g, '') || '未识别名称', selected: true, verifyStatus: null, officialName: '', nameCorrected: false });
-          }
-        }
+        const products = this._extractFundEntries(fullText);
 
         this.isProcessing = false;
         this.ocrStatus = '';
@@ -4782,11 +4886,22 @@ createApp({
     },
 
     // ── OCR (lazy-loaded Tesseract.js) ───────────────────────────
-    async handleImageOCR(event) {
+    handleImageOCR(event) {
       const file = event.target.files[0];
-      if (!file) return;
       event.target.value = '';
-
+      if (file) this._processImageFile(file);
+    },
+    handleImageDrop(event) {
+      this.imageDragover = false;
+      const file = event.dataTransfer && event.dataTransfer.files[0];
+      if (!file) return;
+      if (!/^image\//.test(file.type) && !/\.(jpe?g|png|gif|bmp|webp)$/i.test(file.name)) {
+        this.showToast('请拖入图片文件');
+        return;
+      }
+      this._processImageFile(file);
+    },
+    async _processImageFile(file) {
       this.isProcessing = true;
       this.ocrProgress = 0;
       this.ocrStatus = '正在加载OCR引擎...';
@@ -4815,18 +4930,7 @@ createApp({
         const { data: { text } } = await worker.recognize(enhanced);
         await worker.terminate();
 
-        const lines = text.split('\n').filter(l => l.trim());
-        const products = [];
-        for (let line of lines) {
-          line = this.cleanOcrText(line);
-          const codeMatch = line.match(/(\d{6}\s*[.\u3002·]\s*\w{2}|\d{6}\s*(?:OF|of|oF|Of)|\d{3,6}(?=[\s\u4e00-\u9fa5|｜,，;；）)\]\}]|$))/);
-          if (codeMatch) {
-            const code = this.normalizeCode(codeMatch[1]);
-            const rawName = line.replace(codeMatch[0], '').trim();
-            const name = rawName.replace(/[^\u4e00-\u9fa5\u3400-\u4dbfa-zA-Z0-9\-\uff08\uff09\(\)]/g, '').trim();
-            products.push({ code, name: name || '未识别名称', selected: true, verifyStatus: null, officialName: '', nameCorrected: false });
-          }
-        }
+        const products = this._extractFundEntries(text);
 
         this.previewProducts = products;
         this.isProcessing = false;
@@ -4952,7 +5056,10 @@ createApp({
       const target = await this.getOrCreateImportTarget();
       if (!target) return;
 
-      const selected = this.previewProducts.filter(p => p.selected && p.code && p.name);
+      // 允许名称缺失（可能核对仍未完成）：用代码兜底，避免静默丢行
+      const selected = this.previewProducts
+        .filter(p => p.selected && p.code)
+        .map(p => p.name ? p : { ...p, name: p.code });
       const existingCodes = new Set(target.products.map(p => p.code));
       let added = 0, skipped = 0;
 
