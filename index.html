@@ -1765,6 +1765,24 @@
       border-radius: var(--r-sm);
       font-size: var(--fs-xs);
     }
+    /* 经理→基金行：覆盖机构以小标签形式列出，方便预约路演 */
+    .inst-cover-col { min-width: 160px; }
+    .inst-pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .inst-pill {
+      display: inline-block;
+      padding: 2px 8px;
+      background: rgba(59, 130, 246, 0.08);
+      color: #1e40af;
+      border: 1px solid rgba(59, 130, 246, 0.2);
+      border-radius: 999px;
+      font-size: var(--fs-xs);
+      line-height: 1.4;
+      white-space: nowrap;
+    }
 
     /* Manager link in fund-detail */
     .manager-name.manager-link {
@@ -2543,7 +2561,7 @@
           </div>
           <table class="manager-funds-table">
             <thead>
-              <tr><th>代码</th><th>名称</th><th>类型</th><th class="num-col">近1年</th><th class="num-col">覆盖机构</th></tr>
+              <tr><th>代码</th><th>名称</th><th>类型</th><th class="num-col">近1年</th><th>覆盖机构</th></tr>
             </thead>
             <tbody>
               <tr v-for="row in selectedManagerFunds" :key="row.code">
@@ -2551,7 +2569,12 @@
                 <td>{{ row.name }}</td>
                 <td><span class="type-pill">{{ row.type || '-' }}</span></td>
                 <td class="num-col num" :class="returnClass(row.oneYearReturn)">{{ formatReturn(row.oneYearReturn) }}</td>
-                <td class="num-col num">{{ row.instCount }}</td>
+                <td class="inst-cover-col">
+                  <div class="inst-pill-row" v-if="row.instNames && row.instNames.length">
+                    <span class="inst-pill" v-for="iname in row.instNames" :key="iname">{{ iname }}</span>
+                  </div>
+                  <span v-else class="num">{{ row.instCount }}</span>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -3160,6 +3183,32 @@ async function fetchFundHoldings(bare) {
   }
 }
 
+// ── Fetch latest NAV & date from JSON API（比 pingzhongdata 静态文件更新及时）
+//   返回 { navDate: 'YYYY-MM-DD', nav: number, dailyChange: string } 或 null
+async function fetchLatestNavInfo(bare) {
+  const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch(e) {} }, 5000) : null;
+  try {
+    const resp = await fetch(
+      'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNFInfo?plat=Android&appType=ttjj&product=EFund&Version=1&deviceid=1&Fcodes=' + bare + '&_=' + Date.now(),
+      ctrl ? { signal: ctrl.signal, cache: 'no-store' } : { cache: 'no-store' }
+    );
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    const d = json?.Datas?.[0];
+    if (!d) return null;
+    const navDate = d.FSRQ || null;       // 净值日期 e.g. "2026-04-24"
+    const nav = d.DWJZ != null ? parseFloat(d.DWJZ) : null;
+    const dailyChange = d.RZDF != null ? String(d.RZDF) : null; // 百分比字符串
+    if (!navDate) return null;
+    return { navDate, nav, dailyChange };
+  } catch (_) {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 // ── Fund metadata fetch (pingzhongdata) ───────────────────────────────────
 const _fundMetaGlobals = [
   'fS_name','fS_code','ishb','syl_1n','syl_6y','syl_3y','syl_1y',
@@ -3653,10 +3702,17 @@ createApp({
           if (!seenFundPerManager.has(mgr)) seenFundPerManager.set(mgr, new Set());
           if (seenFundPerManager.get(mgr).has(code)) continue;
           seenFundPerManager.get(mgr).add(code);
+          // 把 instId 解析为 instName 列表（用于 UI 展示具体覆盖了哪几家机构）
+          const instNames = [];
+          for (const id of instSet) {
+            const inst = this.institutions.find(i => i.id === id);
+            if (inst) instNames.push(inst.name);
+          }
           entry.funds.push({
             code, name, type,
             oneYearReturn,
-            instCount: instSet.size
+            instCount: instSet.size,
+            instNames: instNames
           });
           instSet.forEach(id => entry.instIds.add(id));
         }
@@ -4063,13 +4119,22 @@ createApp({
       if (!needRefresh) return;
       // 3) 后台拉取最新
       try {
-        const [meta, apiType, holdings] = await Promise.all([
+        const [meta, apiType, holdings, latestNavInfo] = await Promise.all([
           fetchFundMeta(bare, { force: !!persisted }),
           fetchFundType(bare),
-          fetchFundHoldings(bare)
+          fetchFundHoldings(bare),
+          fetchLatestNavInfo(bare),  // 移动端 JSON API，通常比 pingzhongdata 更新及时
         ]);
         if (apiType) meta.type = apiType;
         if (holdings && holdings.length > 0) meta.topHoldings = holdings;
+        // 用 JSON API 的最新净值覆写 — 仅当 navDate 更新时才覆写，
+        // 避免把 pingzhongdata 的完整序列搞乱
+        if (latestNavInfo && latestNavInfo.navDate
+            && (!meta.navDate || latestNavInfo.navDate > meta.navDate)) {
+          meta.navDate = latestNavInfo.navDate;
+          if (latestNavInfo.nav != null) meta.latestNav = latestNavInfo.nav;
+          if (latestNavInfo.dailyChange != null) meta.dailyChange = latestNavInfo.dailyChange;
+        }
         this._fundMetaCache[bare] = meta;
         this._fundMetaCacheVersion++;
         try { cacheMeta(bare, meta); } catch(e) {}
@@ -4748,17 +4813,46 @@ createApp({
       return entries;
     },
     // 取字符串里第一个 "中文/英文 起头 + 中英数字" 的连续片段
+    // 关键修复：
+    //   1) OCR 常返回 "中 欧 双 利 债 券 A" 这种逐字加空格 → 合并相邻单字之间的空格
+    //   2) 基金名常含连接符 "·" "•" "-" "—" "&" → 字符类需包含
+    //   3) 扩展中文范围到完整的 CJK 区间（含繁体/兼容字）
+    //   4) 名字尾部若残留连接符/全角空格则去掉
+    _normalizeNameText(s) {
+      if (!s) return '';
+      // 把 "中 欧" 这种「单中文字 + 空格 + 中文字」合并 — 反复跑直到稳定
+      let t = String(s);
+      let prev;
+      do {
+        prev = t;
+        t = t.replace(/([㐀-鿿])[ 　]+(?=[㐀-鿿])/g, '$1');
+      } while (t !== prev);
+      // 把数字代码和后缀间的空格也合并（兜底）
+      t = t.replace(/(\d)[ 　]+(\d)/g, '$1$2');
+      return t;
+    },
     _firstChineseName(s) {
       if (!s) return '';
-      // 先丢弃前导分隔
-      const cleaned = s.replace(/^[\s|｜,，、;；()（）\[\]【】\-—:：\/\\.]+/, '');
-      const m = cleaned.match(/[一-龥][一-龥A-Za-z0-9（）()]*/);
-      return m ? m[0] : '';
+      const norm = this._normalizeNameText(s);
+      // 丢弃前导分隔（含全角空格、各种引号、点号、列分隔等）
+      const cleaned = norm.replace(/^[\s　|｜,，、;；:：()（）\[\]【】\-—\/\\.·•・]+/, '');
+      // 名字字符类：CJK 全范围 + 英文 + 数字 + 括号 + 常见连接符
+      const m = cleaned.match(/[㐀-鿿][㐀-鿿 A-Za-z0-9（）()·•・\-—&]*/);
+      if (!m) return '';
+      let name = m[0];
+      // 去掉名字内部残留空格（如果合并失败的兜底）
+      name = name.replace(/\s+/g, '');
+      // 去掉尾部连接符
+      name = name.replace(/[·•・\-—&]+$/, '');
+      return name;
     },
     _lastChineseName(s) {
       if (!s) return '';
-      const m = s.match(/[一-龥][一-龥A-Za-z0-9（）()]*$/);
-      return m ? m[0] : '';
+      const norm = this._normalizeNameText(s);
+      const m = norm.match(/[㐀-鿿][㐀-鿿 A-Za-z0-9（）()·•・\-—&]*$/);
+      if (!m) return '';
+      let name = m[0].replace(/\s+/g, '').replace(/[·•・\-—&]+$/, '');
+      return name;
     },
 
     // ── Excel ────────────────────────────────────────────────────
