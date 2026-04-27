@@ -1424,6 +1424,9 @@
       border: 1px solid var(--ink-200);
       border-left: 3px solid var(--brand-ink);
       border-radius: var(--r-md);
+      max-width: 90vw;
+      white-space: pre-wrap;
+      line-height: 1.5;
       box-shadow: var(--sh-2);
       font-size: var(--fs-body);
       z-index: 1000;
@@ -1468,6 +1471,15 @@
     .vstatus-checking { color: var(--text-tertiary); font-size: 12px; letter-spacing: -2px; }
     .vstatus-ok  { background: var(--success); color: #fff; cursor: pointer; }
     .vstatus-err { background: var(--danger); color: #fff; }
+    .vstatus-inpool {
+      background: rgba(100, 116, 139, 0.12);
+      color: var(--ink-600);
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      width: auto !important;
+      min-width: 36px;
+    }
 
     /* ═══════════════════════════════════════════════════════════════
        Section 4 · Utilities & Responsive
@@ -2811,6 +2823,9 @@
                   <span class="vstatus vstatus-err"
                         v-else-if="p.verifyStatus === 'notfound'"
                         title="天天基金未收录该代码，名称无法自动修正，请人工核查">?</span>
+                  <span class="vstatus vstatus-inpool"
+                        v-else-if="p.verifyStatus === 'inpool'"
+                        title="该代码已在目标机构产品池中，默认不重复导入">已在池</span>
                 </td>
               </tr>
             </tbody>
@@ -3068,6 +3083,48 @@ function normalizeCode(code) {
   return /^\d{6}$/.test(code) ? code + '.OF' : code;
 }
 
+// 国内基金代码合法范围：6 位数字，起始非全零；
+// 拒绝 OCR 误识的 "099999"/"000000" 等可疑码段（实际公募基金代码 >= 000001）
+function isLikelyFundCode(code) {
+  if (!code) return false;
+  const m = String(code).match(/^(\d{6})(\.[A-Za-z]{2})?$/);
+  if (!m) return false;
+  const n = parseInt(m[1], 10);
+  return n >= 1 && n <= 989999;
+}
+
+// 经理名规范化：
+//   - 去前后空白
+//   - 去括号注释（"华李成(共管)" → "华李成"，全角/半角括号都处理）
+//   - 折叠内部空白（"华 李 成" → "华李成"）
+// 用于 managerIndex / 经理搜索 / 比较去重，避免同一经理被算作多人
+function normalizeManagerName(raw) {
+  if (!raw) return '';
+  let s = String(raw).trim();
+  s = s.replace(/[\(（][^\)）]*[\)）]/g, '');
+  s = s.replace(/\s+/g, '');
+  return s.trim();
+}
+
+// 把外部 API 不一致的净值日期（"2026-04-24" / "2026/04/24" / Date）统一为 YYYY-MM-DD
+function formatNavDate(raw) {
+  if (!raw) return null;
+  if (raw instanceof Date) {
+    if (isNaN(raw.getTime())) return null;
+    return raw.getFullYear() + '-'
+      + String(raw.getMonth() + 1).padStart(2, '0') + '-'
+      + String(raw.getDate()).padStart(2, '0');
+  }
+  const s = String(raw).trim();
+  // YYYY-MM-DD / YYYY/MM/DD / YYYY.MM.DD
+  const m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+  if (m) return m[1] + '-' + m[2].padStart(2, '0') + '-' + m[3].padStart(2, '0');
+  // ISO 形如 "2026-04-24T00:00:00.000Z" / 时间戳数字
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return formatNavDate(d);
+  return null;
+}
+
 function fuzzyMatch(query, target) {
   if (!query) return { match: true, score: 0 };
   query = query.toLowerCase().trim();
@@ -3273,7 +3330,7 @@ async function fetchLatestNavInfo(bare) {
     const json = await resp.json();
     const d = json?.Datas?.[0];
     if (!d) return null;
-    const navDate = d.FSRQ || null;       // 净值日期 e.g. "2026-04-24"
+    const navDate = formatNavDate(d.FSRQ);  // 统一为 YYYY-MM-DD
     const nav = d.DWJZ != null ? parseFloat(d.DWJZ) : null;
     const dailyChange = d.RZDF != null ? String(d.RZDF) : null; // 百分比字符串
     if (!navDate) return null;
@@ -3451,7 +3508,8 @@ function fetchFundMeta(bare, opts) {
       let inceptionDate = null;
       const nwt = window.Data_netWorthTrend;
       if (nwt && nwt.length > 0) {
-        inceptionDate = new Date(nwt[0].x).toISOString().slice(0, 10);
+        // ⚠ 不用 toISOString()——会转成 UTC 导致 +8 时区的"今天"被显示为"昨天"
+        inceptionDate = formatNavDate(new Date(nwt[0].x));
       }
       // Top holdings placeholder (loaded separately via fetchFundHoldings)
       let topHoldings = [];
@@ -3461,7 +3519,7 @@ function fetchFundMeta(bare, opts) {
       if (nwtArr && nwtArr.length > 0) {
         const last = nwtArr[nwtArr.length - 1];
         latestNav = last.y;
-        navDate = new Date(last.x).toISOString().slice(0, 10);
+        navDate = formatNavDate(new Date(last.x));
         if (last.equityReturn != null) dailyChange = last.equityReturn;
       }
       // Extract multi-period returns + max drawdown
@@ -3541,7 +3599,11 @@ function fetchFundMeta(bare, opts) {
 
 function extractManagerNames(meta) {
   if (meta && meta.managerDetails && meta.managerDetails.length > 0) {
-    return meta.managerDetails.map(m => m.name).filter(Boolean).join('、');
+    // 写入产品对象前先规范化，保证下游搜索/索引一致
+    return meta.managerDetails
+      .map(m => normalizeManagerName(m.name))
+      .filter(Boolean)
+      .join('、');
   }
   return null;
 }
@@ -3760,13 +3822,21 @@ createApp({
         }
         // 注意：_fundMetaCache 以 bare code（去 .OF 后缀）为键
         meta = (this._fundMetaCache && this._fundMetaCache[this.bareCode(code)]) || null;
-        // 经理名集合
+        // 经理名集合 — 全部走 normalizeManagerName 规范化（去括号注释 / 折叠空白），
+        // 避免 "华李成" / "华李成 " / "华李成(共管)" 被算成三个不同经理
         const mgrNames = new Set();
         if (repProduct && repProduct.manager) {
-          String(repProduct.manager).split(/[,，、\/\s]+/).filter(Boolean).forEach(n => mgrNames.add(n));
+          String(repProduct.manager)
+            .split(/[,，、\/\s]+/)
+            .map(normalizeManagerName)
+            .filter(Boolean)
+            .forEach(n => mgrNames.add(n));
         }
         if (meta && Array.isArray(meta.managerDetails)) {
-          meta.managerDetails.forEach(m => m.name && mgrNames.add(m.name));
+          meta.managerDetails.forEach(m => {
+            const n = normalizeManagerName(m.name);
+            if (n) mgrNames.add(n);
+          });
         }
         if (mgrNames.size === 0) continue;
 
@@ -3957,11 +4027,12 @@ createApp({
     },
 
     // ── Toast ────────────────────────────────────────────────────
-    showToast(msg) {
+    showToast(msg, opts) {
       if (this.toast.timer) clearTimeout(this.toast.timer);
       this.toast.message = msg;
       this.toast.visible = true;
-      this.toast.timer = setTimeout(() => { this.toast.visible = false; }, 2000);
+      const duration = (opts && typeof opts.duration === 'number') ? opts.duration : 2000;
+      this.toast.timer = setTimeout(() => { this.toast.visible = false; }, duration);
     },
 
     // ── View switching ───────────────────────────────────────────
@@ -4392,50 +4463,64 @@ createApp({
     },
 
     async backfillManagers(inst) {
+      // 与 _silentBackfillManagers 共享同一把锁 _managerBackfillLock，
+      // 避免显式补全 + 后台静默补全并发写入 p.manager / p.type 互相覆盖
+      if (!inst || inst._managerBackfillLock) {
+        this.showToast('正在补全中，请稍候…');
+        return;
+      }
       const missing = inst.products.filter(p => !p.manager);
       if (missing.length === 0) return;
+      inst._managerBackfillLock = true;
       this.backfillManagerLoading = true;
       this.backfillManagerProgress = `0/${missing.length}`;
       let filled = 0;
-      for (let i = 0; i < missing.length; i++) {
-        const p = missing[i];
-        this.backfillManagerProgress = `${i + 1}/${missing.length}`;
-        try {
-          const meta = await fetchFundMeta(this.bareCode(p.code));
-          const names = extractManagerNames(meta);
-          if (names) { p.manager = names; filled++; }
-          if (!p.type && meta && meta.type) { p.type = meta.type; }
-        } catch (_) {}
+      try {
+        for (let i = 0; i < missing.length; i++) {
+          const p = missing[i];
+          this.backfillManagerProgress = `${i + 1}/${missing.length}`;
+          try {
+            const meta = await fetchFundMeta(this.bareCode(p.code));
+            const names = extractManagerNames(meta);
+            if (names) { p.manager = names; filled++; }
+            if (!p.type && meta && meta.type) { p.type = meta.type; }
+          } catch (_) {}
+        }
+        if (filled > 0) {
+          inst.updatedAt = new Date().toISOString();
+          await this.saveInst(inst);
+        }
+      } finally {
+        inst._managerBackfillLock = false;
+        this.backfillManagerLoading = false;
+        this.backfillManagerProgress = '';
       }
-      if (filled > 0) {
-        inst.updatedAt = new Date().toISOString();
-        await this.saveInst(inst);
-      }
-      this.backfillManagerLoading = false;
-      this.backfillManagerProgress = '';
       this.showToast(`经理补全完成：${filled}/${missing.length} 成功`);
     },
 
     // 静默后台补全经理名（查询视图选机构时触发，不显示进度/toast）
     // 使用低优先级队列逐只拉取，不抢占用户触发的刷新槽位
     async _silentBackfillManagers(inst) {
-      // 防止同一机构重复触发
-      if (!inst || inst._silentBackfillRunning) return;
+      // 与显式 backfillManagers 共享同一把锁，防止并发写入冲突
+      if (!inst || inst._managerBackfillLock) return;
       const missing = inst.products.filter(p => !p.manager);
       if (missing.length === 0) return;
-      inst._silentBackfillRunning = true;
+      inst._managerBackfillLock = true;
       let filled = 0;
-      for (const p of missing) {
-        // 若用户切换了机构，则中止本次补全
-        if (this.selectedInstitution && this.selectedInstitution.id !== inst.id) break;
-        try {
-          const meta = await fetchFundMeta(this.bareCode(p.code), { priority: 'low' });
-          const names = extractManagerNames(meta);
-          if (names) { p.manager = names; filled++; }
-          if (!p.type && meta && meta.type) p.type = meta.type;
-        } catch (_) {}
+      try {
+        for (const p of missing) {
+          // 若用户切换了机构，则中止本次补全
+          if (this.selectedInstitution && this.selectedInstitution.id !== inst.id) break;
+          try {
+            const meta = await fetchFundMeta(this.bareCode(p.code), { priority: 'low' });
+            const names = extractManagerNames(meta);
+            if (names) { p.manager = names; filled++; }
+            if (!p.type && meta && meta.type) p.type = meta.type;
+          } catch (_) {}
+        }
+      } finally {
+        inst._managerBackfillLock = false;
       }
-      inst._silentBackfillRunning = false;
       if (filled > 0) {
         inst.updatedAt = new Date().toISOString();
         await this.saveInst(inst).catch(() => {});
@@ -4610,7 +4695,7 @@ createApp({
         this.showToast('该机构产品池为空');
         return;
       }
-      const today = new Date().toISOString().slice(0, 10);
+      const today = formatNavDate(new Date());  // 本地时区 YYYY-MM-DD
       // 构造导出数据 — 尽量使用已缓存的字段
       const rows = inst.products.map(p => {
         const meta = (this._fundMetaCache && this._fundMetaCache[this.bareCode(p.code)]) || {};
@@ -4854,43 +4939,69 @@ createApp({
     // ── 共用：从一段文本里提取所有 (基金代码, 名称) 对 ────────────
     //   关键：用 matchAll 抓全部代码（不再只取第一个），
     //   用相邻代码之间的文本切片做名字提取，避免相邻产品互相吞名。
-    _extractFundEntries(rawText) {
-      // 完整的 6 位带后缀；6 位 + OF；以及 6 位末尾跟分隔/非数字字符
-      const RE = /(\d{6}\s*[.。·]\s*[A-Za-z]{2}|\d{6}\s*(?:OF|of|oF|Of)|\d{6}(?=[^\d]|$))/g;
+    // 共用：从一段文本中提取所有 (基金代码, 名称) 对。
+    //   options.existingCodes: Set<string> — 已在目标产品池中的代码，命中标记 inPool=true
+    _extractFundEntries(rawText, options) {
+      options = options || {};
+      const existingCodes = options.existingCodes instanceof Set ? options.existingCodes : null;
       const entries = [];
       const seen = new Set();
+      // 每个候选位置带 inPool 标记 ─ 让 UI 提示"已在池中"，避免静默跳过造成误解
       const lines = String(rawText || '').split(/\n+/);
+      // 每行单独抽：先用 \d{6,} 抓所有「连续数字段」，再按 6 拆分
       for (let raw of lines) {
         if (!raw) continue;
         const line = this.cleanOcrText(raw);
         if (!line) continue;
-        const matches = [...line.matchAll(RE)];
-        if (matches.length === 0) continue;
-        for (let mi = 0; mi < matches.length; mi++) {
-          const m = matches[mi];
-          const codeRaw = m[1].replace(/\s+/g, '');
-          const code = this.normalizeCode(codeRaw);
-          if (seen.has(code)) continue;
-          // 名字候选：本次代码末尾 → 下个代码起点之间的文本
-          const startIdx = m.index + m[0].length;
-          const endIdx = mi + 1 < matches.length ? matches[mi + 1].index : line.length;
-          let between = line.slice(startIdx, endIdx);
-          // 第一个代码若后面无文字，回退到代码之前的文本
-          let nameCand = this._firstChineseName(between);
-          if (!nameCand && mi === 0) {
-            const before = line.slice(0, m.index);
-            nameCand = this._lastChineseName(before);
+        // Pass 1: 收集候选 (code, startIdx, endIdx 含 .OF 后缀)
+        const candidates = [];
+        const runRe = /\d{6,}/g;
+        let runMatch;
+        while ((runMatch = runRe.exec(line)) !== null) {
+          const run = runMatch[0];
+          const idx = runMatch.index;
+          if (run.length % 6 === 0) {
+            // 单只或多只相邻无分隔，按 6 切：解决 "100053100054" 漏掉首个的 lookahead bug
+            for (let i = 0; i < run.length; i += 6) {
+              candidates.push({ code: run.substr(i, 6), startIdx: idx + i, endIdx: idx + i + 6 });
+            }
+          } else if (run.length === 7 || run.length === 8) {
+            // 7-8 位通常是 OCR 把分隔符吃掉或附带 1 位干扰：取首 6 位作为最佳猜测
+            candidates.push({ code: run.substr(0, 6), startIdx: idx, endIdx: idx + 6 });
           }
-          // 仍无名字，再尝试从代码之后最近的中文起头串里拿
-          if (!nameCand) nameCand = this._firstChineseName(between);
+          // 其它异常长度（9-11 等）直接丢弃，避免引入垃圾码
+        }
+        if (candidates.length === 0) continue;
+        // Pass 2: 对每个候选拼接 .OF 后缀（若存在）并切名字
+        for (let i = 0; i < candidates.length; i++) {
+          const c = candidates[i];
+          // 尝试吸收紧跟其后的 .OF / 。OF / OF / .SH .SZ 等市场后缀
+          let endIdx = c.endIdx;
+          const after = line.slice(c.endIdx);
+          const suffixM = after.match(/^\s*(?:[.。·]\s*[A-Za-z]{2}|OF\b)/i);
+          if (suffixM) endIdx = c.endIdx + suffixM[0].length;
+          // 合法性筛查：非法代码（如 "999999" 偏外、"000000"）跳过
+          if (!isLikelyFundCode(c.code)) continue;
+          const code = this.normalizeCode(c.code);
+          if (seen.has(code)) continue;
+          // 名字候选：本次代码末尾 → 下个代码起点
+          const nextStart = i + 1 < candidates.length ? candidates[i + 1].startIdx : line.length;
+          const between = line.slice(endIdx, nextStart);
+          let nameCand = this._firstChineseName(between);
+          if (!nameCand && i === 0) {
+            // 首个代码若其后无中文，回退到代码之前找
+            nameCand = this._lastChineseName(line.slice(0, c.startIdx));
+          }
           seen.add(code);
+          const inPool = !!(existingCodes && existingCodes.has(code));
           entries.push({
             code,
             name: (nameCand || '未识别名称').replace(/\s+/g, ''),
-            selected: true,
-            verifyStatus: null,
+            selected: !inPool,            // 已在池中默认不勾选
+            verifyStatus: inPool ? 'inpool' : null,
             officialName: '',
             nameCorrected: false,
+            inPool: inPool,
           });
         }
       }
@@ -5082,13 +5193,21 @@ createApp({
           fullText += '\n';
         }
 
-        const products = this._extractFundEntries(fullText);
+        const existingCodes = this.importTargetInst
+          ? new Set((this.importTargetInst.products || []).map(p => p.code))
+          : null;
+        const products = this._extractFundEntries(fullText, { existingCodes });
 
         this.isProcessing = false;
         this.ocrStatus = '';
         if (products.length > 0) {
           this.previewProducts = products;
-          this.showToast(`已从PDF中识别 ${products.length} 条产品`);
+          const inPoolCount = products.filter(p => p.inPool).length;
+          const newCount = products.length - inPoolCount;
+          this.showToast(
+            `已从PDF识别 ${products.length} 条`
+            + (inPoolCount > 0 ? `（${inPoolCount} 条已在该机构池中，已默认取消勾选）` : '')
+          );
           this.verifyPreviewProducts();
         } else {
           this.showToast('未在PDF中识别到有效的基金代码（如005787.OF或005787）');
@@ -5178,13 +5297,20 @@ createApp({
         const { data: { text } } = await worker.recognize(enhanced);
         await worker.terminate();
 
-        const products = this._extractFundEntries(text);
+        const existingCodesImg = this.importTargetInst
+          ? new Set((this.importTargetInst.products || []).map(p => p.code))
+          : null;
+        const products = this._extractFundEntries(text, { existingCodes: existingCodesImg });
 
         this.previewProducts = products;
         this.isProcessing = false;
         if (products.length > 0) {
           this.ocrStatus = '';
-          this.showToast(`识别完成，共 ${products.length} 条记录`);
+          const inPoolCount = products.filter(p => p.inPool).length;
+          this.showToast(
+            `识别完成，共 ${products.length} 条`
+            + (inPoolCount > 0 ? `（${inPoolCount} 条已在该机构池中，已默认取消勾选）` : '')
+          );
           this.verifyPreviewProducts();
         } else {
           this.ocrStatus = '';
@@ -5273,7 +5399,8 @@ createApp({
 
     async verifyPreviewProducts() {
       const snapshot = this.previewProducts;
-      const items = snapshot.filter(p => this.isValidCode(p.code));
+      // 跳过已在池中的产品（名字、状态都已确定，无需再核对）
+      const items = snapshot.filter(p => this.isValidCode(p.code) && !p.inPool);
       items.forEach(p => { p.verifyStatus = 'checking'; });
       const BATCH = 5;
       for (let i = 0; i < items.length; i += BATCH) {
@@ -5308,16 +5435,25 @@ createApp({
       const selected = this.previewProducts
         .filter(p => p.selected && p.code)
         .map(p => p.name ? p : { ...p, name: p.code });
-      const existingCodes = new Set(target.products.map(p => p.code));
-      let added = 0, skipped = 0;
+      const existingByCode = new Map(target.products.map(p => [p.code, p]));
+      let added = 0, skipped = 0, nameConflict = 0;
+      const conflictDetails = [];
 
       const newProducts = [];
       for (const p of selected) {
-        if (existingCodes.has(p.code)) {
+        const existing = existingByCode.get(p.code);
+        if (existing) {
+          // 同 code 不同 name —— 收集供 toast 提示，不静默吞掉
+          const newName = (p.name || '').trim().replace(/\s+/g, '');
+          const oldName = (existing.name || '').trim().replace(/\s+/g, '');
+          if (newName && oldName && newName !== oldName && p.verifyStatus === 'ok') {
+            nameConflict++;
+            conflictDetails.push(`${p.code}（旧：${oldName}｜新：${newName}）`);
+          }
           skipped++;
         } else {
           newProducts.push(p);
-          existingCodes.add(p.code);
+          existingByCode.set(p.code, p);
           added++;
         }
       }
@@ -5335,7 +5471,17 @@ createApp({
       target.updatedAt = new Date().toISOString();
       await this.saveInst(target);
       this.previewProducts = [];
-      this.showToast(`导入完成：新增 ${added} 条${skipped > 0 ? '，跳过 ' + skipped + ' 条重复' : ''}`);
+      let msg = `导入完成：新增 ${added} 条`;
+      if (skipped > 0) msg += `，跳过 ${skipped} 条重复`;
+      // 名称冲突合并到同一个 toast（避免两条 toast 互相覆盖），延长展示时长
+      if (nameConflict > 0) {
+        const sample = conflictDetails.slice(0, 3).join('；');
+        const more = conflictDetails.length > 3 ? `… 共 ${conflictDetails.length} 条不一致` : '';
+        msg += `\n⚠ 名称冲突已保留旧记录：${sample}${more}（如需更新请先在管理页删除旧条目）`;
+        this.showToast(msg, { duration: 7000 });
+      } else {
+        this.showToast(msg);
+      }
     },
 
     // ── Data Export/Import ────────────────────────────────────────
@@ -5345,7 +5491,7 @@ createApp({
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `机构产品池备份_${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `机构产品池备份_${formatNavDate(new Date())}.json`;
       a.click();
       URL.revokeObjectURL(url);
       this.showToast('备份已下载');
