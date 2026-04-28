@@ -1674,6 +1674,107 @@
       scrollbar-width: thin;
       -ms-overflow-style: none;
     }
+    /* 查询模式切换栏：单家 / 跨机构 */
+    .query-mode-bar {
+      display: inline-flex;
+      gap: 4px;
+      padding: 3px;
+      background: var(--ink-050);
+      border-radius: 10px;
+      margin-bottom: var(--sp-3);
+    }
+    .mode-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border: none;
+      background: transparent;
+      color: var(--ink-600);
+      font-size: var(--fs-sm);
+      font-weight: 500;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      font-family: inherit;
+    }
+    .mode-chip:hover { color: var(--brand-ink); }
+    .mode-chip.active {
+      background: #fff;
+      color: var(--brand-ink);
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
+    }
+    .mode-chip-tag {
+      font-size: 11px;
+      padding: 1px 6px;
+      background: rgba(59, 130, 246, 0.1);
+      color: #1e40af;
+      border-radius: 999px;
+      font-weight: 500;
+    }
+    /* 全局速查结果区 */
+    .global-query-result {
+      margin-top: var(--sp-3);
+      background: var(--paper);
+      border: 1px solid var(--ink-200);
+      border-radius: var(--r-md);
+      overflow: hidden;
+    }
+    .global-summary {
+      display: flex;
+      gap: var(--sp-3);
+      padding: 10px 14px;
+      background: var(--ink-050);
+      border-bottom: 1px solid var(--ink-200);
+      font-size: var(--fs-sm);
+      font-weight: 500;
+    }
+    .global-summary .ok-count { color: var(--success); }
+    .global-summary .na-count { color: var(--ink-500); }
+    .global-result-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--fs-sm);
+    }
+    .global-result-table th,
+    .global-result-table td {
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--ink-100);
+    }
+    .global-result-table th {
+      background: var(--ink-050);
+      font-weight: 600;
+      color: var(--ink-600);
+      font-size: var(--fs-xs);
+      letter-spacing: 0.3px;
+    }
+    .global-result-table tr:last-child td { border-bottom: none; }
+    .global-result-table tr.row-miss td { color: var(--ink-500); }
+    .global-result-table .cell-muted { color: var(--ink-500); }
+    .status-pill {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .status-pill.pill-ok {
+      background: rgba(16, 185, 129, 0.12);
+      color: var(--success);
+    }
+    .status-pill.pill-miss {
+      background: rgba(100, 116, 139, 0.12);
+      color: var(--ink-500);
+    }
+    .global-query-empty {
+      padding: 24px;
+      text-align: center;
+      background: var(--paper);
+      border: 1px dashed var(--ink-200);
+      border-radius: var(--r-md);
+      margin-top: var(--sp-3);
+    }
     .chip-bar::-webkit-scrollbar { height: 3px; }
     .chip-bar::-webkit-scrollbar-thumb { background: var(--ink-200); border-radius: 2px; }
     .chip {
@@ -1748,11 +1849,26 @@
       color: var(--ink-500);
       margin-top: 4px;
     }
+    /* 经理详情视图切换条（基金清单 vs 按机构汇总） */
+    .manager-view-toggle {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px;
+      background: var(--ink-050);
+      border-radius: 8px;
+      margin-top: 12px;
+    }
+    .manager-view-toggle .mode-chip {
+      padding: 5px 12px;
+      font-size: 12px;
+    }
     .manager-funds-table {
       width: 100%;
       border-collapse: collapse;
       font-size: var(--fs-sm);
     }
+    .manager-funds-table .cell-muted { color: var(--ink-500); }
     .manager-funds-table th,
     .manager-funds-table td {
       padding: 10px 12px;
@@ -2077,8 +2193,23 @@
 
     <!-- Query View -->
     <div class="container" v-if="currentView === 'query'">
-      <!-- Institution Selector -->
-      <div class="input-group">
+      <!-- 查询模式切换：单家 vs 跨我覆盖的全部机构 -->
+      <div class="query-mode-bar" v-if="institutions.length > 0">
+        <button
+          class="mode-chip"
+          :class="{ active: !globalQueryMode }"
+          @click="setGlobalMode(false)"
+        >单家机构</button>
+        <button
+          class="mode-chip"
+          :class="{ active: globalQueryMode }"
+          @click="setGlobalMode(true)"
+          title="一次查所有已纳入机构 — 适合电话突袭"
+        >跨机构速查 <span class="mode-chip-tag">{{ institutions.length }} 家</span></button>
+      </div>
+
+      <!-- 单家模式：机构选择 -->
+      <div class="input-group" v-if="!globalQueryMode">
         <label>选择机构客户</label>
         <div class="dropdown">
           <div class="input-wrap">
@@ -2104,8 +2235,51 @@
         </div>
       </div>
 
+      <!-- 跨机构速查模式：直接输代码/名字 -->
+      <div class="input-group" v-if="globalQueryMode">
+        <label>查询基金产品 <span class="text-muted" style="font-weight:400;font-size:12px;">· 跨全部 {{ institutions.length }} 家机构</span></label>
+        <div class="input-wrap">
+          <input
+            type="text"
+            v-model="fundQuery"
+            @input="onGlobalQueryInput"
+            placeholder="输入基金代码或名称，立刻看哪几家可投..."
+            ref="globalFundInput"
+          >
+        </div>
+      </div>
+
+      <!-- 跨机构结果矩阵 -->
+      <div class="global-query-result" v-if="globalQueryMode && fundQuery.trim() && globalQueryResults.length > 0">
+        <div class="global-summary">
+          <span class="ok-count">✓ 可投 {{ globalQueryResults.filter(r => r.hit).length }} 家</span>
+          <span class="na-count">✗ 不在池 {{ globalQueryResults.filter(r => !r.hit).length }} 家</span>
+        </div>
+        <table class="global-result-table">
+          <thead>
+            <tr><th>机构</th><th>状态</th><th>类型</th><th>经理</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in globalQueryResults" :key="r.inst.id" :class="r.hit ? 'row-hit' : 'row-miss'">
+              <td>{{ r.inst.name }}</td>
+              <td>
+                <span class="status-pill" :class="r.hit ? 'pill-ok' : 'pill-miss'">
+                  {{ r.hit ? '可投' : '不在池' }}
+                </span>
+              </td>
+              <td class="cell-muted">{{ r.hit ? (r.type || '—') : '—' }}</td>
+              <td class="cell-muted">{{ r.hit ? (r.manager || '—') : '—' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="global-query-empty"
+           v-if="globalQueryMode && fundQuery.trim() && globalQueryResults.length === 0">
+        <p class="text-muted">没有匹配项 — 请检查代码或名称</p>
+      </div>
+
       <!-- Empty state guide -->
-      <div class="empty-state" v-if="!selectedInstitution && institutions.length > 0">
+      <div class="empty-state" v-if="!globalQueryMode && !selectedInstitution && institutions.length > 0">
         <div class="empty-icon">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text-tertiary)">
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -2114,8 +2288,8 @@
         <p>请先选择机构客户<br>然后输入基金代码或名称查询</p>
       </div>
 
-      <!-- Fund Query -->
-      <div class="input-group" v-if="selectedInstitution">
+      <!-- Fund Query (单家模式) -->
+      <div class="input-group" v-if="!globalQueryMode && selectedInstitution">
         <label>查询基金产品</label>
         <div class="input-wrap">
           <input
@@ -2150,9 +2324,9 @@
         </div>
       </div>
 
-      <!-- Result -->
+      <!-- Result (单家模式) -->
       <div
-        v-if="queryResult"
+        v-if="!globalQueryMode && queryResult"
         class="result-card"
         :class="[queryResult, { visible: resultVisible }]"
       >
@@ -2182,7 +2356,7 @@
       </div>
 
       <!-- Fund Detail Card -->
-      <div class="fund-detail-card" v-if="queryResult === 'investable' && fundDetail">
+      <div class="fund-detail-card" v-if="!globalQueryMode && queryResult === 'investable' && fundDetail">
         <!-- Risk Badges + data-as-of -->
         <div class="fund-detail-header">
           <div class="risk-badges" v-if="riskBadges.length > 0">
@@ -2292,7 +2466,7 @@
         </div>
       </div>
 
-      <div class="fund-detail-card" v-if="queryResult === 'investable' && fundTagsLoading">
+      <div class="fund-detail-card" v-if="!globalQueryMode && queryResult === 'investable' && fundTagsLoading">
         <div class="fund-detail-loading">
           <div class="dot-pulse"><span></span><span></span><span></span></div>
           <div style="margin-top:8px;">加载基金详情...</div>
@@ -2632,8 +2806,18 @@
               在池基金 <span class="num">{{ selectedManagerFunds.length }}</span> 只
               · 纳入机构 <span class="num">{{ selectedManagerInstitutionCount }}</span> 家
             </div>
+            <!-- 视图切换：基金清单 / 机构汇总（路演排期） -->
+            <div class="manager-view-toggle">
+              <button class="mode-chip" :class="{ active: !managerByInst }" @click="managerByInst = false">基金清单</button>
+              <button class="mode-chip" :class="{ active: managerByInst }" @click="managerByInst = true" title="按机构汇总，方便预约多家路演">按机构汇总</button>
+              <button v-if="managerByInst" class="btn btn-sm btn-outline" @click="copyManagerInstMatrix" style="margin-left:auto;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                复制 Markdown
+              </button>
+            </div>
           </div>
-          <table class="manager-funds-table">
+          <!-- 模式 A：基金清单（默认） -->
+          <table class="manager-funds-table" v-if="!managerByInst">
             <thead>
               <tr><th>代码</th><th>名称</th><th>类型</th><th class="num-col">近1年</th><th class="num-col">覆盖机构</th></tr>
             </thead>
@@ -2662,6 +2846,26 @@
                       <span class="inst-pill" v-for="iname in row.instNames" :key="iname">{{ iname }}</span>
                     </div>
                   </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <!-- 模式 B：按机构汇总（路演排期视图） -->
+          <table class="manager-funds-table" v-else>
+            <thead>
+              <tr><th>机构</th><th class="num-col">在池基金</th><th>类型分布</th><th>基金代码</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in managerInstMatrix" :key="row.instId">
+                <td><strong>{{ row.instName }}</strong></td>
+                <td class="num-col num">{{ row.fundCount }}</td>
+                <td>
+                  <span class="type-pill" v-for="t in row.typeDist" :key="t.type" style="margin-right:4px;">
+                    {{ t.type }} {{ t.count }}
+                  </span>
+                </td>
+                <td class="cell-muted" style="font-family:var(--font-mono);font-size:12px;">
+                  {{ row.codes.join(', ') }}
                 </td>
               </tr>
             </tbody>
@@ -3700,6 +3904,9 @@ createApp({
       matchedFund: null,
       fundTags: [],
       fundTagsLoading: false,
+      // 跨机构速查模式：电话突袭场景，输一个代码 / 名字看在我覆盖的几家机构里能投
+      globalQueryMode: false,
+      globalQueryResults: [],   // [{ inst, hit, product, type, manager }]
 
       // Manage
       expandedInst: null,
@@ -3757,6 +3964,8 @@ createApp({
       selectedManagerName: null,
       // 当前展开"覆盖机构"小卡片的基金代码（同一时间只展开一个）
       instCoverOpenCode: null,
+      // 经理详情视图：false=基金清单（默认）/ true=按机构汇总（路演排期）
+      managerByInst: false,
 
       // M3-F2.1 Quick filter chips
       quickFilter: 'all',
@@ -3894,6 +4103,46 @@ createApp({
       const entry = this.managerIndex.find(m => m.name === this.selectedManagerName);
       return entry ? entry.instCount : 0;
     },
+    // 经理 × 机构覆盖矩阵：把基金清单透视成"该经理在每家机构有几只 / 什么类型 / 哪些代码"
+    // 用于路演排期：一眼判断要拜访哪几家、备什么物料
+    managerInstMatrix() {
+      if (!this.selectedManagerName) return [];
+      const funds = this.selectedManagerFunds;
+      if (!funds.length) return [];
+      // 由 instId/instName → { fundCount, codes, typeMap }
+      const matrix = new Map();
+      for (const f of funds) {
+        const instNames = f.instNames || [];
+        // managerIndex 没把 instId 暴露到 fund 行 — 用 institutions + name 反查
+        for (const iname of instNames) {
+          const inst = this.institutions.find(i => i.name === iname);
+          const key = inst ? inst.id : iname;
+          if (!matrix.has(key)) {
+            matrix.set(key, { instId: key, instName: iname, fundCount: 0, codes: [], typeMap: {} });
+          }
+          const row = matrix.get(key);
+          row.fundCount++;
+          row.codes.push(f.code);
+          // 类型聚类 — 用一级分类
+          const primary = resolveFundClassification(f.type, f.name).primary;
+          row.typeMap[primary] = (row.typeMap[primary] || 0) + 1;
+        }
+      }
+      const arr = [];
+      for (const row of matrix.values()) {
+        arr.push({
+          instId: row.instId,
+          instName: row.instName,
+          fundCount: row.fundCount,
+          codes: row.codes,
+          typeDist: Object.entries(row.typeMap)
+            .sort((a, b) => b[1] - a[1])
+            .map(([type, count]) => ({ type, count })),
+        });
+      }
+      arr.sort((a, b) => b.fundCount - a.fundCount);
+      return arr;
+    },
 
     // ── M3-F2.1 Quick filter chips ──────────────────────────────
     // 当前选中机构的产品分类统计 + 可投资筛选
@@ -3981,11 +4230,62 @@ createApp({
 
     handleLogout() {
       destroySession();
+      this._clearUiState();   // 清掉 UI 状态，避免下次登录看到上一个用户的查询
       this.authenticated = false;
       this.institutions = [];
       this.selectedInstitution = null;
       this.instSearchText = '';
       this.currentView = 'query';
+    },
+
+    // ── UI 状态持久化（sessionStorage）────────────────────────────
+    // 保留：选中的机构 id / 查询词 / 快筛 chip / 跨机构模式
+    // 不保留：选中的基金详情（数据可能过期，重新选更安全）
+    _saveUiState() {
+      if (!this.authenticated) return;
+      try {
+        const state = {
+          instId: this.selectedInstitution ? this.selectedInstitution.id : null,
+          fundQuery: this.fundQuery || '',
+          quickFilter: this.quickFilter || 'all',
+          globalQueryMode: !!this.globalQueryMode,
+          currentView: this.currentView || 'query',
+        };
+        sessionStorage.setItem('uiState_v1', JSON.stringify(state));
+      } catch (_) {}
+    },
+    _clearUiState() {
+      try { sessionStorage.removeItem('uiState_v1'); } catch (_) {}
+    },
+    _restoreUiState() {
+      try {
+        const raw = sessionStorage.getItem('uiState_v1');
+        if (!raw) return;
+        const s = JSON.parse(raw);
+        if (s.currentView && ['query', 'manage', 'manager', 'import'].includes(s.currentView)) {
+          this.currentView = s.currentView;
+        }
+        if (s.globalQueryMode) {
+          this.globalQueryMode = true;
+        }
+        if (s.instId) {
+          const inst = this.institutions.find(i => i.id === s.instId);
+          if (inst) {
+            this.selectedInstitution = inst;
+            this.instSearchText = inst.name;
+            // 触发索引构建（M4），与正常 selectInstitution 路径一致
+            if (typeof this._buildInstIndex === 'function') this._buildInstIndex(inst);
+          }
+        }
+        if (s.fundQuery) this.fundQuery = s.fundQuery;
+        if (s.quickFilter) this.quickFilter = s.quickFilter;
+        // 全局模式下立刻重跑结果；单家模式下不自动跳详情，避免误开网络
+        if (this.globalQueryMode && this.fundQuery.trim()) {
+          this._doGlobalFundQuery();
+        } else if (this.selectedInstitution && (this.fundQuery.trim() || this.quickFilter !== 'all')) {
+          this._doFundQuery();
+        }
+      } catch (_) {}
     },
 
     // ── Persistence (dual-layer) ─────────────────────────────────
@@ -3995,6 +4295,8 @@ createApp({
       } catch (e) {
         this.showToast(handleError('loadData', e));
       }
+      // 数据加载完后恢复 UI 状态（机构 id 若已不存在则忽略）
+      this._restoreUiState();
       // 预热：浏览器空闲时拉取未缓存/陈旧的基金 meta（受并发池 4 路限流）
       const ric = typeof window !== 'undefined' && window.requestIdleCallback;
       const schedule = ric ? cb => ric(cb, { timeout: 3000 }) : cb => setTimeout(cb, 1200);
@@ -4117,6 +4419,71 @@ createApp({
       }
       clearTimeout(this._fundQueryDebounceTimer);
       this._fundQueryDebounceTimer = setTimeout(() => this._doFundQuery(), 180);
+    },
+
+    // ── 跨机构全局速查（场景 B：电话突袭） ─────────────────────────────
+    setGlobalMode(on) {
+      this.globalQueryMode = !!on;
+      // 切换模式时保留查询词，但清空旧结果，避免视图错位
+      this.fundSuggestions = [];
+      this.queryResult = null;
+      this.resultVisible = false;
+      this.matchedFund = null;
+      this.fundDetail = null;
+      this.fundTags = [];
+      this.fundTagsLoading = false;
+      this.globalQueryResults = [];
+      if (on && this.fundQuery.trim()) this._doGlobalFundQuery();
+    },
+
+    onGlobalQueryInput() {
+      clearTimeout(this._globalQueryDebounceTimer);
+      this._globalQueryDebounceTimer = setTimeout(() => this._doGlobalFundQuery(), 150);
+    },
+
+    _doGlobalFundQuery() {
+      const qRaw = this.fundQuery.trim();
+      if (!qRaw) { this.globalQueryResults = []; return; }
+      const qNorm = normalizeCode(qRaw);
+      const isPureCode = /^\d{3,6}(\.[A-Za-z]{2})?$/.test(qNorm);
+      const results = [];
+      // 遍历所有机构 — 内存计算，不发任何网络请求
+      for (const inst of this.institutions) {
+        let hit = null;
+        // 优先按代码精准命中（O(1) 走 _searchIndex.codeMap，否则线性兜底）
+        if (isPureCode) {
+          if (inst._searchIndex && inst._searchIndex.codeMap) {
+            hit = inst._searchIndex.codeMap.get(qNorm)
+              || inst._searchIndex.codeMap.get(qRaw);
+          }
+          if (!hit) {
+            hit = (inst.products || []).find(p => p.code === qNorm || p.code === qRaw);
+          }
+        }
+        // 名称模糊匹配兜底（仅当代码未命中且查询非纯代码时）
+        if (!hit && !isPureCode) {
+          for (const p of (inst.products || [])) {
+            const nameMatch = fuzzyMatch(qRaw, p.name || '');
+            const mgrMatch = p.manager ? fuzzyMatch(qRaw, p.manager) : { match: false };
+            if (nameMatch.match || mgrMatch.match) {
+              if (!hit || nameMatch.score > 0) hit = p;
+            }
+          }
+        }
+        results.push({
+          inst,
+          hit: !!hit,
+          product: hit || null,
+          type: hit ? (hit.type || '') : '',
+          manager: hit ? (hit.manager || '') : '',
+        });
+      }
+      // 排序：可投在前，可投按机构产品池规模降序（信息更丰富的客户优先看到）
+      results.sort((a, b) => {
+        if (a.hit !== b.hit) return a.hit ? -1 : 1;
+        return (b.inst.products.length || 0) - (a.inst.products.length || 0);
+      });
+      this.globalQueryResults = results;
     },
 
     _doFundQuery() {
@@ -4798,6 +5165,43 @@ createApp({
     // 点击"覆盖机构"数字徽章 → 弹出/收起小卡片
     toggleInstCover(code) {
       this.instCoverOpenCode = this.instCoverOpenCode === code ? null : code;
+    },
+
+    // 把经理 × 机构矩阵复制为 Markdown 表（贴到路演备忘录直接可用）
+    copyManagerInstMatrix() {
+      const rows = this.managerInstMatrix;
+      if (!rows.length) { this.showToast('当前经理无机构覆盖数据'); return; }
+      const lines = [];
+      lines.push(`### ${this.selectedManagerName} · 机构覆盖路演表`);
+      lines.push(`*共 ${rows.length} 家机构 · 在池基金 ${this.selectedManagerFunds.length} 只 · ${formatNavDate(new Date())}*`);
+      lines.push('');
+      lines.push('| 机构 | 在池基金 | 类型分布 | 基金代码 |');
+      lines.push('|---|---|---|---|');
+      for (const r of rows) {
+        const tDist = r.typeDist.map(t => `${t.type} ${t.count}`).join(' / ') || '—';
+        lines.push(`| ${r.instName} | ${r.fundCount} | ${tDist} | ${r.codes.join(', ')} |`);
+      }
+      const md = lines.join('\n');
+      const onCopied = () => this.showToast('已复制到剪贴板，可粘贴到路演备忘录', { duration: 3000 });
+      const onFailed = () => this.showToast('复制失败，请检查浏览器权限');
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(md).then(onCopied).catch(onFailed);
+      } else {
+        // 兜底：旧浏览器用 textarea + execCommand
+        const ta = document.createElement('textarea');
+        ta.value = md;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+          document.execCommand('copy');
+          onCopied();
+        } catch (e) {
+          onFailed();
+        }
+        document.body.removeChild(ta);
+      }
     },
 
     _backfillManagerFunds(name) {
@@ -5522,7 +5926,13 @@ createApp({
   watch: {
     showAddInstModal(v) {
       if (v) nextTick(() => { if (this.$refs.newInstInput) this.$refs.newInstInput.focus(); });
-    }
+    },
+    // UI 状态持久化：相关字段变化即写入 sessionStorage（轻量，无 IO 节流也可接受）
+    selectedInstitution() { this._saveUiState(); },
+    fundQuery() { this._saveUiState(); },
+    quickFilter() { this._saveUiState(); },
+    globalQueryMode() { this._saveUiState(); },
+    currentView() { this._saveUiState(); }
   },
 
   async mounted() {
@@ -5553,6 +5963,12 @@ createApp({
     // Enter key handler for fund query
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && this.currentView === 'query' && this.fundQuery) {
+        // 跨机构速查模式：Enter 立即重跑（debounce 之外的兜底）
+        if (this.globalQueryMode) {
+          clearTimeout(this._globalQueryDebounceTimer);
+          this._doGlobalFundQuery();
+          return;
+        }
         if (this.fundSuggestions.length > 0) {
           this.selectFund(this.fundSuggestions[0]);
         } else {
