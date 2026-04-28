@@ -1827,6 +1827,48 @@
       margin: 4px 4px 8px;
       letter-spacing: 0.2px;
     }
+    /* 合并经理 modal */
+    .btn-link-sm {
+      background: none;
+      border: none;
+      color: var(--brand-ink);
+      cursor: pointer;
+      font-size: 12px;
+      padding: 0 4px;
+      margin-left: 6px;
+      font-family: inherit;
+    }
+    .btn-link-sm:hover { text-decoration: underline; }
+    .merge-candidate-list {
+      max-height: 300px;
+      overflow-y: auto;
+      border: 1px solid var(--ink-200);
+      border-radius: var(--r-md);
+      padding: 4px;
+      background: var(--paper);
+    }
+    .merge-candidate-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      cursor: pointer;
+      border-radius: var(--r-sm);
+      transition: background 0.12s;
+    }
+    .merge-candidate-item:hover { background: var(--ink-050); }
+    .merge-candidate-item input[type="checkbox"] { flex-shrink: 0; }
+    .merge-candidate-name {
+      flex: 1;
+      font-weight: 500;
+      font-size: 14px;
+      color: var(--ink-800);
+    }
+    .merge-candidate-meta {
+      color: var(--ink-500);
+      font-size: 12px;
+      white-space: nowrap;
+    }
     .empty-hint {
       padding: 14px 16px;
       text-align: center;
@@ -2837,6 +2879,9 @@
             <div class="manager-detail-sub">
               在池基金 <span class="num">{{ selectedManagerFunds.length }}</span> 只
               · 纳入机构 <span class="num">{{ selectedManagerInstitutionCount }}</span> 家
+              <button class="btn-link-sm" @click="openMergeModal" title="若 API 把同一人按不同形式（中/英/简称）返回，可手动合并">
+                合并经理…
+              </button>
             </div>
             <!-- 视图切换：基金清单 / 机构汇总（路演排期） -->
             <div class="manager-view-toggle">
@@ -2939,6 +2984,53 @@
               </div>
             </div>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--ink-400);flex-shrink:0"><path d="M9 18l6-6-6-6"/></svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- 合并经理 modal -->
+      <div class="modal-mask" v-if="showMergeModal" @click.self="closeMergeModal">
+        <div class="modal-content" style="max-width:480px;">
+          <div class="modal-title">合并到「{{ selectedManagerName }}」</div>
+          <p style="font-size:13px;color:var(--ink-500);margin:0 0 12px;">
+            勾选下方需要合并进来的经理（视作同一个人）。合并后他们的基金会归到「{{ selectedManagerName }}」名下，
+            原经理记录消失。该映射会持久化，下次预热也不会重新拆分。
+          </p>
+          <div class="input-wrap" style="margin-bottom:8px;">
+            <input
+              v-model="mergeSearchText"
+              placeholder="搜索经理名..."
+              style="font-size:14px;"
+            >
+          </div>
+          <div class="merge-candidate-list">
+            <label
+              v-for="m in mergeCandidates"
+              :key="m.name"
+              class="merge-candidate-item"
+            >
+              <input type="checkbox" :value="m.name" v-model="mergeSelectedNames">
+              <span class="merge-candidate-name">{{ m.name }}</span>
+              <span class="merge-candidate-meta">
+                在池 {{ m.fundCount }} · 机构 {{ m.instCount }}
+              </span>
+            </label>
+            <div v-if="mergeCandidates.length === 0" style="text-align:center;padding:16px;color:var(--ink-500);font-size:13px;">
+              没有其它经理可供合并
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:12px;">
+            <span style="font-size:12px;color:var(--ink-500);">
+              已选 {{ mergeSelectedNames.length }} 位
+            </span>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-outline btn-sm" @click="closeMergeModal">取消</button>
+              <button
+                class="btn btn-primary btn-sm"
+                :disabled="mergeSelectedNames.length === 0"
+                @click="confirmMergeManagers"
+              >确认合并</button>
+            </div>
           </div>
         </div>
       </div>
@@ -4016,6 +4108,16 @@ createApp({
       instCoverOpenCode: null,
       // 经理详情视图：false=基金清单（默认）/ true=按机构汇总（路演排期）
       managerByInst: false,
+      // ── 经理合并 ──────────────────────────────────────────────
+      // managerAliasMap: { oldName -> canonicalName }（持久化在 localStorage）
+      // 用于解决 API 把同一人按不同形式（中文/拼音/简称）返回 → 被算成两人的问题
+      managerAliasMap: (() => {
+        try { return JSON.parse(localStorage.getItem('managerAliasMap_v1') || '{}'); }
+        catch (_) { return {}; }
+      })(),
+      showMergeModal: false,
+      mergeSelectedNames: [],
+      mergeSearchText: '',
 
       // M3-F2.1 Quick filter chips
       quickFilter: 'all',
@@ -4067,6 +4169,8 @@ createApp({
     managerIndex() {
       // 触发对 meta 缓存版本的依赖 —— meta 到齐后重算
       void this._fundMetaCacheVersion;
+      const aliasMap = this.managerAliasMap || {};
+      const remap = (n) => aliasMap[n] || n; // 应用合并别名（持久化）
       const idx = new Map(); // managerName -> aggregated
       const fundToInsts = new Map(); // code -> Set(instId)
       // 第一遍：建立 code → 机构集合
@@ -4090,19 +4194,20 @@ createApp({
         }
         // 注意：_fundMetaCache 以 bare code（去 .OF 后缀）为键
         meta = (this._fundMetaCache && this._fundMetaCache[this.bareCode(code)]) || null;
-        // 经理名集合 — 全部走 normalizeManagerName 规范化（去括号注释 / 折叠空白），
-        // 避免 "华李成" / "华李成 " / "华李成(共管)" 被算成三个不同经理
+        // 经理名集合 — 规范化 + 应用合并别名（aliasMap）
+        // 解决 API 把同一人按不同形式（中文/拼音/简称）返回 → 被算成两人的问题
         const mgrNames = new Set();
         if (repProduct && repProduct.manager) {
           String(repProduct.manager)
             .split(/[,，、\/\s]+/)
             .map(normalizeManagerName)
             .filter(Boolean)
+            .map(remap)
             .forEach(n => mgrNames.add(n));
         }
         if (meta && Array.isArray(meta.managerDetails)) {
           meta.managerDetails.forEach(m => {
-            const n = normalizeManagerName(m.name);
+            const n = remap(normalizeManagerName(m.name));
             if (n) mgrNames.add(n);
           });
         }
@@ -4161,6 +4266,14 @@ createApp({
       if (!this.selectedManagerName) return 0;
       const entry = this.managerIndex.find(m => m.name === this.selectedManagerName);
       return entry ? entry.instCount : 0;
+    },
+    // 合并候选：当前经理之外的所有经理，按搜索词过滤
+    mergeCandidates() {
+      const target = this.selectedManagerName;
+      const q = (this.mergeSearchText || '').trim();
+      const list = this.managerIndex.filter(m => m.name !== target);
+      if (!q) return list;
+      return list.filter(m => fuzzyMatch(q, m.name).match);
     },
     // 经理 × 机构覆盖矩阵：把基金清单透视成"该经理在每家机构有几只 / 什么类型 / 哪些代码"
     // 用于路演排期：一眼判断要拜访哪几家、备什么物料
@@ -5261,6 +5374,64 @@ createApp({
         }
         document.body.removeChild(ta);
       }
+    },
+
+    // ── 经理合并 ──────────────────────────────────────────────
+    openMergeModal() {
+      this.mergeSelectedNames = [];
+      this.mergeSearchText = '';
+      this.showMergeModal = true;
+    },
+    closeMergeModal() {
+      this.showMergeModal = false;
+      this.mergeSelectedNames = [];
+      this.mergeSearchText = '';
+    },
+    async confirmMergeManagers() {
+      const target = this.selectedManagerName;
+      const victims = this.mergeSelectedNames.filter(n => n && n !== target);
+      if (!target || victims.length === 0) { this.closeMergeModal(); return; }
+      // 1) 更新 aliasMap 并持久化（managerIndex computed 会立即生效）
+      const next = { ...(this.managerAliasMap || {}) };
+      for (const v of victims) {
+        next[v] = target;
+        // 若 victim 之前已是某人的别名（链式），把那个根也指向新 target
+        for (const k of Object.keys(next)) {
+          if (next[k] === v) next[k] = target;
+        }
+      }
+      this.managerAliasMap = next;
+      try { localStorage.setItem('managerAliasMap_v1', JSON.stringify(next)); } catch (_) {}
+      // 2) 把 institutions 中产品的 p.manager 字符串也实际改写（去重 + 替换），
+      //    保证导出 / 经理回填 / 跨机构查询都看到合并后的结果
+      let dirtyInsts = 0;
+      const victimSet = new Set(victims);
+      for (const inst of this.institutions) {
+        let dirty = false;
+        for (const p of (inst.products || [])) {
+          if (!p.manager) continue;
+          const parts = String(p.manager)
+            .split(/[,，、\/\s]+/)
+            .map(normalizeManagerName)
+            .filter(Boolean);
+          const replaced = parts.map(n => victimSet.has(n) ? target : n);
+          const dedup = [...new Set(replaced)];
+          const newStr = dedup.join('、');
+          if (newStr !== p.manager) {
+            p.manager = newStr;
+            dirty = true;
+          }
+        }
+        if (dirty) {
+          inst.updatedAt = new Date().toISOString();
+          this.saveInst(inst).catch(() => {});
+          dirtyInsts++;
+        }
+      }
+      // 3) 触发 managerIndex 重算
+      this._fundMetaCacheVersion++;
+      this.closeMergeModal();
+      this.showToast(`已合并 ${victims.length} 位经理到「${target}」` + (dirtyInsts > 0 ? `（更新 ${dirtyInsts} 家机构）` : ''));
     },
 
     _backfillManagerFunds(name) {
