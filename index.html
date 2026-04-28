@@ -1369,6 +1369,19 @@
     .preview-table .warn {
       background: #fef3c7;
     }
+    .preview-batch-tools {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+      padding: 8px 12px;
+      background: var(--ink-050);
+      border-radius: var(--r-md);
+    }
+    .preview-batch-tools .btn-sm {
+      font-size: 12px;
+      padding: 4px 10px;
+    }
     .preview-actions {
       display: flex;
       gap: 8px;
@@ -1808,6 +1821,22 @@
 
     /* Manager list */
     .manager-list-card { padding: 0; }
+    .manager-list-meta {
+      font-size: 12px;
+      color: var(--ink-500);
+      margin: 4px 4px 8px;
+      letter-spacing: 0.2px;
+    }
+    .empty-hint {
+      padding: 14px 16px;
+      text-align: center;
+      color: var(--ink-500);
+      font-size: var(--fs-sm);
+      background: var(--ink-050);
+      border: 1px dashed var(--ink-200);
+      border-radius: var(--r-md);
+      margin-top: var(--sp-2);
+    }
     .manager-row-item {
       display: flex;
       align-items: center;
@@ -2278,14 +2307,17 @@
         <p class="text-muted">没有匹配项 — 请检查代码或名称</p>
       </div>
 
-      <!-- Empty state guide -->
-      <div class="empty-state" v-if="!globalQueryMode && !selectedInstitution && institutions.length > 0">
+      <!-- Empty state guide：只在尚无机构时给完整教学；已有机构时仅一行轻提示 -->
+      <div class="empty-state" v-if="!globalQueryMode && !selectedInstitution && institutions.length === 0">
         <div class="empty-icon">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text-tertiary)">
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
         </div>
-        <p>请先选择机构客户<br>然后输入基金代码或名称查询</p>
+        <p>暂无机构数据<br>请先在「管理」中添加机构客户，或在「导入」上传产品池</p>
+      </div>
+      <div class="empty-hint" v-else-if="!globalQueryMode && !selectedInstitution && institutions.length > 0">
+        选择机构客户开始查询
       </div>
 
       <!-- Fund Query (单家模式) -->
@@ -2889,7 +2921,10 @@
           <p v-if="institutions.length === 0">暂无机构数据<br>请先在「管理」中添加机构</p>
           <p v-else>尚未匹配到基金经理<br>请等待"补全经理"完成或修改搜索关键字</p>
         </div>
-        <div class="card manager-list-card" v-else>
+        <div class="manager-list-meta" v-if="filteredManagers.length > 0">
+          共 {{ filteredManagers.length }} 位经理 · 按在池基金数 ↓ / 覆盖机构数 ↓ 排序
+        </div>
+        <div class="card manager-list-card" v-if="filteredManagers.length > 0">
           <div
             class="manager-row-item"
             v-for="m in filteredManagers"
@@ -3002,6 +3037,19 @@
         <div class="preview-header">
           <h3>识别结果预览</h3>
           <span class="preview-count">共 {{ previewProducts.length }} 条</span>
+        </div>
+        <!-- 批量工具：核对失败 / 已在池 时尤其有用 -->
+        <div class="preview-batch-tools">
+          <button class="btn btn-sm btn-outline" @click="verifyPreviewProducts" :disabled="isPreviewVerifying" :title="'重新对所有未通过核对的代码发起核对'">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            重新核对 ({{ previewProducts.filter(p => !p.inPool && p.verifyStatus !== 'ok').length }})
+          </button>
+          <button class="btn btn-sm btn-outline" @click="filterKeepVerified" :disabled="!hasUnverifiedPreview" title="移除核对失败 / 未识别名称的行">
+            仅保留已核对
+          </button>
+          <button class="btn btn-sm btn-outline" @click="filterKeepNew" :disabled="!hasInPoolPreview" title="移除已在该机构池中的行（避免误导入）">
+            移除已在池
+          </button>
         </div>
         <div class="card" style="padding:12px;overflow-x:auto;">
           <table class="preview-table">
@@ -3907,6 +3955,8 @@ createApp({
       // 跨机构速查模式：电话突袭场景，输一个代码 / 名字看在我覆盖的几家机构里能投
       globalQueryMode: false,
       globalQueryResults: [],   // [{ inst, hit, product, type, manager }]
+      // 导入预览：批量核对运行中标志（防止用户连续点）
+      isPreviewVerifying: false,
 
       // Manage
       expandedInst: null,
@@ -3993,6 +4043,15 @@ createApp({
     },
     selectedPreviewCount() {
       return this.previewProducts.filter(p => p.selected).length;
+    },
+    hasUnverifiedPreview() {
+      // 'ok' 视为已核对；'inpool' 不算"核对失败"（已知在池，单独处理）
+      return this.previewProducts.some(p =>
+        !p.inPool && p.verifyStatus !== 'ok'
+      );
+    },
+    hasInPoolPreview() {
+      return this.previewProducts.some(p => p.inPool);
     },
     maxHoldingRatio() {
       if (!this.fundDetail || !this.fundDetail.topHoldings || this.fundDetail.topHoldings.length === 0) return 1;
@@ -5222,10 +5281,21 @@ createApp({
         fetchFundMeta(bare).then(meta => {
           this._fundMetaCache[bare] = meta;
           try { cacheMeta(bare, meta); } catch(e) {}
-          this._fundMetaCacheVersion++;
+          // 不再每只基金都 ++version —— 改为节流：300ms 内多次到达只触发一次重算，
+          // 避免预热阶段 100+ 次连续重算 managerIndex / 渲染
+          this._bumpMetaCacheVersionThrottled();
         }).catch(() => {});
       });
       if (pending) this._fundMetaCacheVersion++; // 立即触发一次重算，让 LS 命中立即显示
+    },
+
+    // 节流版 cacheVersion 自增：用于预热等批量场景，避免 watch/computed 风暴
+    _bumpMetaCacheVersionThrottled() {
+      if (this._cacheVersionBumpTimer) return;
+      this._cacheVersionBumpTimer = setTimeout(() => {
+        this._cacheVersionBumpTimer = null;
+        this._fundMetaCacheVersion++;
+      }, 300);
     },
 
     // ── M3-F2.2 Comparison toggle ────────────────────────────────
@@ -5802,15 +5872,37 @@ createApp({
     },
 
     async verifyPreviewProducts() {
+      if (this.isPreviewVerifying) return;
+      this.isPreviewVerifying = true;
       const snapshot = this.previewProducts;
       // 跳过已在池中的产品（名字、状态都已确定，无需再核对）
       const items = snapshot.filter(p => this.isValidCode(p.code) && !p.inPool);
       items.forEach(p => { p.verifyStatus = 'checking'; });
       const BATCH = 5;
-      for (let i = 0; i < items.length; i += BATCH) {
-        if (this.previewProducts !== snapshot) break;
-        await Promise.all(items.slice(i, i + BATCH).map(p => this.verifySingleFund(p)));
+      try {
+        for (let i = 0; i < items.length; i += BATCH) {
+          if (this.previewProducts !== snapshot) break;
+          await Promise.all(items.slice(i, i + BATCH).map(p => this.verifySingleFund(p)));
+        }
+      } finally {
+        this.isPreviewVerifying = false;
       }
+    },
+
+    // 批量过滤：仅保留核对通过（verifyStatus === 'ok'）
+    filterKeepVerified() {
+      const before = this.previewProducts.length;
+      this.previewProducts = this.previewProducts.filter(p => p.verifyStatus === 'ok');
+      const removed = before - this.previewProducts.length;
+      this.showToast(removed > 0 ? `已移除 ${removed} 条未通过核对` : '没有需要移除的行');
+    },
+
+    // 批量过滤：移除「已在池」的行
+    filterKeepNew() {
+      const before = this.previewProducts.length;
+      this.previewProducts = this.previewProducts.filter(p => !p.inPool);
+      const removed = before - this.previewProducts.length;
+      this.showToast(removed > 0 ? `已移除 ${removed} 条池内重复` : '没有需要移除的行');
     },
 
     normalizeCode(code) {
