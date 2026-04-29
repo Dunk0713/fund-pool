@@ -5612,8 +5612,30 @@ createApp({
             candidates.push({ code: run.substr(i, 6), startIdx: idx + i, endIdx: idx + i + 6 });
           }
         } else if (run.length === 7 || run.length === 8) {
-          // 7-8 位通常是 OCR 把分隔符吃掉或附带 1 位干扰：取首 6 位
-          candidates.push({ code: run.substr(0, 6), startIdx: idx, endIdx: idx + 6 });
+          // 7-8 位 = OCR 多塞了 1-2 位干扰（粗体行左侧的绿色竖条 / 列号 / 行高亮被
+          // 误识为数字最常见）。需智能判断该取哪 6 位窗口：
+          //   规则 A：若紧跟其后有 .OF / .SH / .SZ / OF 等市场后缀 → 取靠近后缀的 6 位
+          //          （干扰几乎不会出现在后缀前）
+          //   规则 B：否则比较前 6 / 后 6 的"前导零"数量，多的胜出
+          //          （大陆基金代码绝大多数 0xxxxx 起头，前导零越多越像真代码）
+          //   规则 C：仍打平则保守取前 6
+          const afterRun = text.slice(idx + run.length);
+          const hasSuffix = /^\s*(?:[.。·]\s*[A-Za-z]{2}|OF\b|0[Ff]\b|\.\s*0[Ff]\b)/i.test(afterRun);
+          let pickStart = 0;
+          if (hasSuffix) {
+            pickStart = run.length - 6;  // 取靠近后缀的 6 位
+          } else {
+            const front = run.substr(0, 6);
+            const back = run.substr(run.length - 6, 6);
+            const frontZ = (front.match(/^0+/) || [''])[0].length;
+            const backZ = (back.match(/^0+/) || [''])[0].length;
+            if (backZ > frontZ) pickStart = run.length - 6;
+          }
+          candidates.push({
+            code: run.substr(pickStart, 6),
+            startIdx: idx + pickStart,
+            endIdx: idx + pickStart + 6
+          });
         }
         // 其它异常长度（9-11 等）丢弃
       }
@@ -5623,7 +5645,8 @@ createApp({
         const c = candidates[i];
         let endIdx = c.endIdx;
         // 吸收紧跟其后的 .OF / 。OF / .SH .SZ 等市场后缀
-        const suffixM = text.slice(c.endIdx).match(/^\s*(?:[.。·]\s*[A-Za-z]{2}|OF\b)/i);
+        // 同时识别 OCR 把 ".OF" 误读为 ".0F" 的情况（O→0），把它一并吃掉
+        const suffixM = text.slice(c.endIdx).match(/^\s*(?:[.。·]\s*[A-Za-z]{2}|OF\b|\.\s*0[Ff]\b|0[Ff]\b)/i);
         if (suffixM) endIdx = c.endIdx + suffixM[0].length;
         if (!isLikelyFundCode(c.code)) continue;
         const code = this.normalizeCode(c.code);
