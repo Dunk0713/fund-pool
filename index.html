@@ -2774,6 +2774,7 @@
           </div>
           <div class="pool-total-scale" v-if="poolStats.totalScale != null">
             产品池总规模约 <strong>{{ poolStats.totalScale }}</strong> 亿元
+            <span class="cell-muted" style="font-size:11px;" v-if="poolStats.sampleCount">（抽样 {{ poolStats.sampleCount }} 只估算）</span>
           </div>
           <div class="pool-total-scale" v-if="poolStats.loading">
             <div class="dot-pulse" style="display:inline-flex;gap:4px;vertical-align:middle;"><span style="width:5px;height:5px;border-radius:50%;background:var(--text-tertiary);animation:dotPulse 1.2s infinite;"></span><span style="width:5px;height:5px;border-radius:50%;background:var(--text-tertiary);animation:dotPulse 1.2s infinite 0.2s;"></span><span style="width:5px;height:5px;border-radius:50%;background:var(--text-tertiary);animation:dotPulse 1.2s infinite 0.4s;"></span></div>
@@ -5472,39 +5473,29 @@ createApp({
         }))
         .sort((a, b) => b.count - a.count);
       this.poolStats = { segments, totalScale: null, loading: true, failed: false };
-      // 异步：抽样 20 只估算总规模；每个请求 6s 超时，整体不超过 20s（4 批 × 5s = 20s）
-      const sample = inst.products.slice(0, 20);
+      // 估算总规模：用 pingzhongdata (JSONP) 而非 fundmobapi —— 后者直接给网页调用会返回
+      // "网络繁忙"拒绝响应；前者是静态 JS，CORS 友好且已有持久化缓存
+      // 抽样 20 只产品（按 family 去重，A/C 规模重复）
+      let samplePool = [];
+      const seenFams = new Set();
+      for (const p of inst.products) {
+        const key = getFundFamilyKey(p && p.name) || ('__nokey_' + (p && p.code));
+        if (seenFams.has(key)) continue;
+        seenFams.add(key);
+        samplePool.push(p);
+        if (samplePool.length >= 20) break;
+      }
       let scaleSum = 0, scaleCount = 0;
-      const batchSize = 5;
-      const REQ_TIMEOUT = 6000;
       try {
-        for (let i = 0; i < sample.length; i += batchSize) {
-          // 如果用户已经关掉/切到其他 inst，停止后续 batch
-          if (this.poolStatsInst !== inst.id) return;
-          const batch = sample.slice(i, i + batchSize);
-          const results = await Promise.allSettled(
-            batch.map(async p => {
-              const ctrl = new AbortController();
-              const tid = setTimeout(() => ctrl.abort(), REQ_TIMEOUT);
-              try {
-                const resp = await fetch(
-                  'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNFInfo?plat=Android&appType=ttjj&product=EFund&Version=1&deviceid=1&Fcodes=' + this.bareCode(p.code),
-                  { signal: ctrl.signal }
-                );
-                const json = await resp.json();
-                const fgs = json && json.Datas && json.Datas[0] && json.Datas[0].FundScale;
-                if (fgs) { const m = String(fgs).match(/([\d.]+)/); if (m) return parseFloat(m[1]); }
-                return null;
-              } catch (_) {
-                return null;
-              } finally {
-                clearTimeout(tid);
-              }
-            })
-          );
-          for (const r of results) {
-            if (r.status === 'fulfilled' && r.value != null) {
-              scaleSum += r.value;
+        const metas = await Promise.allSettled(
+          samplePool.map(p => fetchFundMeta(this.bareCode(p.code)).catch(() => null))
+        );
+        for (const r of metas) {
+          if (this.poolStatsInst !== inst.id) return; // 用户已关闭/切换
+          if (r.status === 'fulfilled' && r.value) {
+            const sc = parseFloat(r.value.scale);
+            if (!isNaN(sc) && sc > 0) {
+              scaleSum += sc;
               scaleCount++;
             }
           }
@@ -5517,6 +5508,7 @@ createApp({
             const avgScale = scaleSum / scaleCount;
             const estimated = (avgScale * total).toFixed(1);
             this.poolStats.totalScale = estimated;
+            this.poolStats.sampleCount = scaleCount;
           } else {
             this.poolStats.failed = true;
           }
