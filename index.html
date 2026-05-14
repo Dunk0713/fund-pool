@@ -1934,6 +1934,94 @@
       padding: 5px 12px;
       font-size: 12px;
     }
+    /* 基金清单子切换：产品视图 / 份额视图 */
+    .manager-funds-sub-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin: 12px 0 8px;
+      flex-wrap: wrap;
+    }
+    .manager-funds-sub-toggle .mode-chip {
+      padding: 4px 10px;
+      font-size: 12px;
+      border: 1px solid var(--ink-200);
+      background: #fff;
+      color: var(--ink-600);
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .manager-funds-sub-toggle .mode-chip.active {
+      background: var(--brand-ink, #1e40af);
+      border-color: var(--brand-ink, #1e40af);
+      color: #fff;
+    }
+    .manager-funds-sub-toggle .sub-toggle-hint {
+      font-size: 11px;
+      color: var(--ink-500);
+      margin-left: auto;
+    }
+    /* 份额 chip：在产品行内列出 A/C 等不同份额 */
+    .share-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      margin: 2px 4px 2px 0;
+      background: var(--ink-050);
+      border: 1px solid var(--ink-100);
+      border-radius: 10px;
+      font-size: 11px;
+      color: var(--ink-700);
+      font-family: var(--font-mono);
+      white-space: nowrap;
+    }
+    .share-chip-letter {
+      display: inline-block;
+      min-width: 14px;
+      padding: 0 4px;
+      background: var(--brand-ink, #1e40af);
+      color: #fff;
+      border-radius: 6px;
+      font-weight: 600;
+      text-align: center;
+      font-family: var(--font-sans, inherit);
+    }
+    .share-chip-count {
+      color: var(--ink-500);
+    }
+    /* 覆盖机构 popover 内：按份额拆分的明细 */
+    .share-cover-breakdown {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .share-cover-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .share-chip-mini {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 6px;
+      background: var(--ink-050);
+      border-radius: 6px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--ink-700);
+    }
+    .share-chip-mini .share-chip-letter {
+      font-family: var(--font-sans, inherit);
+    }
+    .share-cover-insts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      flex: 1;
+    }
     .manager-funds-table {
       width: 100%;
       border-collapse: collapse;
@@ -2877,7 +2965,13 @@
           <div class="manager-detail-header">
             <div class="manager-detail-name">{{ selectedManagerName }}</div>
             <div class="manager-detail-sub">
-              在池基金 <span class="num">{{ selectedManagerFunds.length }}</span> 只
+              <template v-if="!managerByInst && managerFundsViewMode === 'family'">
+                在池产品 <span class="num">{{ selectedManagerProductFamilies.length }}</span> 只
+                · 共 <span class="num">{{ selectedManagerFunds.length }}</span> 个份额
+              </template>
+              <template v-else>
+                在池基金 <span class="num">{{ selectedManagerFunds.length }}</span> 只
+              </template>
               · 纳入机构 <span class="num">{{ selectedManagerInstitutionCount }}</span> 家
               <button class="btn-link-sm" @click="openMergeModal" title="若 API 把同一人按不同形式（中/英/简称）返回，可手动合并">
                 合并经理…
@@ -2894,39 +2988,101 @@
             </div>
           </div>
           <!-- 模式 A：基金清单（默认） -->
-          <table class="manager-funds-table" v-if="!managerByInst">
-            <thead>
-              <tr><th>代码</th><th>名称</th><th>类型</th><th class="num-col">近1年</th><th class="num-col">覆盖机构</th></tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in selectedManagerFunds" :key="row.code">
-                <td class="num">{{ row.code }}</td>
-                <td>{{ row.name }}</td>
-                <td><span class="type-pill">{{ row.type || '-' }}</span></td>
-                <td class="num-col num" :class="returnClass(row.oneYearReturn)">{{ formatReturn(row.oneYearReturn) }}</td>
-                <td class="num-col inst-count-cell">
-                  <button
-                    class="inst-count-btn"
-                    :class="{ active: instCoverOpenCode === row.code }"
-                    @click.stop="toggleInstCover(row.code)"
-                    :disabled="!row.instNames || row.instNames.length === 0"
-                    :title="row.instNames && row.instNames.length ? '点击查看覆盖的机构' : ''"
-                  >{{ row.instCount }}</button>
-                  <div
-                    v-if="instCoverOpenCode === row.code && row.instNames && row.instNames.length"
-                    class="inst-cover-popover"
-                    @click.stop
-                  >
-                    <div class="inst-cover-popover-arrow"></div>
-                    <div class="inst-cover-popover-title">覆盖机构</div>
-                    <div class="inst-cover-popover-list">
-                      <span class="inst-pill" v-for="iname in row.instNames" :key="iname">{{ iname }}</span>
+          <div v-if="!managerByInst">
+            <!-- 子切换：产品视图（A/C 合并） / 份额视图（逐条展开） -->
+            <div class="manager-funds-sub-toggle">
+              <button class="mode-chip" :class="{ active: managerFundsViewMode === 'family' }" @click="managerFundsViewMode = 'family'; instCoverOpenCode = null" title="A/C 等同基金不同份额合并为一只产品">产品视图</button>
+              <button class="mode-chip" :class="{ active: managerFundsViewMode === 'share' }" @click="managerFundsViewMode = 'share'; instCoverOpenCode = null" title="每个基金代码独占一行">份额视图</button>
+              <span class="sub-toggle-hint" v-if="managerFundsViewMode === 'family'">A/C/E 等同基金不同份额已合并</span>
+            </div>
+            <!-- 子模式 A1：产品视图（默认） -->
+            <table class="manager-funds-table" v-if="managerFundsViewMode === 'family'">
+              <thead>
+                <tr><th>产品名称</th><th>类型</th><th class="num-col">近1年(最佳)</th><th>份额</th><th class="num-col">覆盖机构</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in selectedManagerProductFamilies" :key="row.key">
+                  <td>{{ row.familyName }}</td>
+                  <td><span class="type-pill">{{ row.type || '-' }}</span></td>
+                  <td class="num-col num" :class="returnClass(row.bestReturn)">{{ formatReturn(row.bestReturn) }}</td>
+                  <td>
+                    <span
+                      class="share-chip"
+                      v-for="s in row.shares"
+                      :key="s.code"
+                      :title="s.name + (s.instNames.length ? ' · ' + s.instNames.join('、') : '')"
+                    >
+                      <span class="share-chip-letter" v-if="s.shareClass">{{ s.shareClass }}</span>
+                      <span class="share-chip-code">{{ bareCode(s.code) }}</span>
+                      <span class="share-chip-count" v-if="s.instCount">· {{ s.instCount }}家</span>
+                    </span>
+                  </td>
+                  <td class="num-col inst-count-cell">
+                    <button
+                      class="inst-count-btn"
+                      :class="{ active: instCoverOpenCode === '__fam_' + row.key }"
+                      @click.stop="toggleInstCover('__fam_' + row.key)"
+                      :disabled="row.instCount === 0"
+                      :title="row.instCount ? '点击按份额查看覆盖机构' : ''"
+                    >{{ row.instCount }}</button>
+                    <div
+                      v-if="instCoverOpenCode === '__fam_' + row.key && row.instCount"
+                      class="inst-cover-popover"
+                      @click.stop
+                    >
+                      <div class="inst-cover-popover-arrow"></div>
+                      <div class="inst-cover-popover-title">覆盖机构 · 按份额拆分</div>
+                      <div class="share-cover-breakdown">
+                        <div class="share-cover-row" v-for="s in row.shares" :key="s.code">
+                          <span class="share-chip-mini">
+                            <span class="share-chip-letter" v-if="s.shareClass">{{ s.shareClass }}</span>{{ bareCode(s.code) }}
+                          </span>
+                          <div class="share-cover-insts">
+                            <span class="inst-pill" v-for="iname in s.instNames" :key="iname">{{ iname }}</span>
+                            <span class="cell-muted" v-if="s.instNames.length === 0">—</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <!-- 子模式 A2：份额视图（旧版逐行） -->
+            <table class="manager-funds-table" v-else>
+              <thead>
+                <tr><th>代码</th><th>名称</th><th>类型</th><th class="num-col">近1年</th><th class="num-col">覆盖机构</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in selectedManagerFunds" :key="row.code">
+                  <td class="num">{{ row.code }}</td>
+                  <td>{{ row.name }}</td>
+                  <td><span class="type-pill">{{ row.type || '-' }}</span></td>
+                  <td class="num-col num" :class="returnClass(row.oneYearReturn)">{{ formatReturn(row.oneYearReturn) }}</td>
+                  <td class="num-col inst-count-cell">
+                    <button
+                      class="inst-count-btn"
+                      :class="{ active: instCoverOpenCode === row.code }"
+                      @click.stop="toggleInstCover(row.code)"
+                      :disabled="!row.instNames || row.instNames.length === 0"
+                      :title="row.instNames && row.instNames.length ? '点击查看覆盖的机构' : ''"
+                    >{{ row.instCount }}</button>
+                    <div
+                      v-if="instCoverOpenCode === row.code && row.instNames && row.instNames.length"
+                      class="inst-cover-popover"
+                      @click.stop
+                    >
+                      <div class="inst-cover-popover-arrow"></div>
+                      <div class="inst-cover-popover-title">覆盖机构</div>
+                      <div class="inst-cover-popover-list">
+                        <span class="inst-pill" v-for="iname in row.instNames" :key="iname">{{ iname }}</span>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <!-- 模式 B：按机构汇总（路演排期视图） -->
           <table class="manager-funds-table" v-else>
             <thead>
@@ -2979,7 +3135,7 @@
             <div class="manager-row-main">
               <div class="manager-row-name">{{ m.name }}</div>
               <div class="manager-row-meta">
-                在池 <span class="num">{{ m.fundCount }}</span> 只
+                在池 <span class="num">{{ m.productCount }}</span> 只产品<template v-if="m.productCount !== m.fundCount"><span class="cell-muted">（{{ m.fundCount }} 个份额）</span></template>
                 · 覆盖 <span class="num">{{ m.instCount }}</span> 家机构
               </div>
             </div>
@@ -3451,6 +3607,36 @@ function normalizeManagerName(raw) {
   s = s.replace(/[\(（][^\)）]*[\)）]/g, '');
   s = s.replace(/\s+/g, '');
   return s.trim();
+}
+
+// 把"中欧XXA"/"中欧XXC"等同基金不同份额合并到一个 family key
+// A/C/E 等主要差在费率和销售渠道，底层持仓/经理/策略完全相同，应作为同一只产品计数
+// 规则：剥离尾部份额标识字母（A/B/C/D/E/H/I/O/R/Y）+ 币种括号
+// 注意：故意不带 type — 同一经理名下、剥后同名的基金即视为同一产品，
+//      防止 meta 异步加载到一半时 A/C 类型字段不一致导致误拆
+function getFundFamilyKey(name) {
+  if (!name) return '';
+  let root = String(name).trim();
+  // 反复剥离尾部括号 (xxx)（QDII/LOF/美元 等都吃掉），与尾部份额字母交替
+  // 这样 "中欧XX(QDII)A" / "中欧XXA(QDII)" 两种顺序都能正确归一
+  let prev;
+  do {
+    prev = root;
+    root = root.replace(/[（(][^（()）]*[)）]\s*$/, '').trim();
+    root = root.replace(/[ABCDEHIORY]\s*$/, '').trim();
+  } while (root !== prev);
+  if (!root) root = String(name).trim(); // 安全网：剥得只剩空就回退原名
+  return root;
+}
+
+// 从基金名末尾抽取份额类（A/C/E…）。无标识返回 ''。
+// 先把尾部括号 (xxx) 剥掉再取字母，与 family key 同步处理顺序
+function getShareClassLetter(name) {
+  if (!name) return '';
+  let s = String(name).trim();
+  s = s.replace(/[（(][^（()）]*[)）]\s*$/, '').trim();
+  const m = s.match(/([ABCDEHIORY])\s*$/);
+  return m ? m[1] : '';
 }
 
 // 把外部 API 不一致的净值日期（"2026-04-24" / "2026/04/24" / Date）统一为 YYYY-MM-DD
@@ -4111,6 +4297,8 @@ createApp({
       instCoverOpenCode: null,
       // 经理详情视图：false=基金清单（默认）/ true=按机构汇总（路演排期）
       managerByInst: false,
+      // 基金清单子模式：'family'=按产品聚合（A/C 合并） / 'share'=按份额展开
+      managerFundsViewMode: 'family',
       // ── 经理合并 ──────────────────────────────────────────────
       // managerAliasMap: { oldName -> canonicalName }（持久化在 localStorage）
       // 用于解决 API 把同一人按不同形式（中文/拼音/简称）返回 → 被算成两人的问题
@@ -4244,9 +4432,13 @@ createApp({
       // 转数组并汇总
       const arr = [];
       for (const entry of idx.values()) {
+        // 计算"产品数"：把 A/C/E 等同基金不同份额合并后的去重数量
+        const familyKeys = new Set();
+        for (const f of entry.funds) familyKeys.add(getFundFamilyKey(f.name));
         arr.push({
           name: entry.name,
-          fundCount: entry.funds.length,
+          fundCount: entry.funds.length,           // 份额数
+          productCount: familyKeys.size,           // 产品数（A/C 合并后）
           instCount: entry.instIds.size,
           funds: entry.funds.sort((a, b) => (b.oneYearReturn || -999) - (a.oneYearReturn || -999))
         });
@@ -4278,6 +4470,68 @@ createApp({
       if (!q) return list;
       return list.filter(m => fuzzyMatch(q, m.name).match);
     },
+    // 把当前经理的份额清单按"产品 family"聚合（A/C/E 同名同类合并）
+    // 用于经理详情默认视图，避免份额数量虚高、突出真实产品数
+    selectedManagerProductFamilies() {
+      const funds = this.selectedManagerFunds;
+      if (!funds.length) return [];
+      const fam = new Map();
+      for (const f of funds) {
+        const key = getFundFamilyKey(f.name);
+        if (!fam.has(key)) {
+          fam.set(key, {
+            key,
+            type: f.type,
+            shares: [],
+            instNameSet: new Set(),
+            bestReturn: null,
+          });
+        }
+        const e = fam.get(key);
+        e.shares.push({
+          code: f.code,
+          name: f.name,
+          shareClass: getShareClassLetter(f.name),
+          instCount: f.instCount,
+          instNames: f.instNames || [],
+          oneYearReturn: f.oneYearReturn,
+        });
+        (f.instNames || []).forEach(n => e.instNameSet.add(n));
+        if (f.oneYearReturn != null && (e.bestReturn == null || f.oneYearReturn > e.bestReturn)) {
+          e.bestReturn = f.oneYearReturn;
+        }
+      }
+      const arr = [];
+      for (const e of fam.values()) {
+        // 主名 = 最短份额名去尾字母（一般得到 family 主干）；若剥空则回退最短名
+        const shortest = e.shares.slice().sort((a, b) => a.name.length - b.name.length)[0];
+        let displayName = (shortest.name || '').replace(/[ABCDEHIORY]\s*$/, '').trim();
+        if (!displayName) displayName = shortest.name;
+        // 份额按字母 + 代码排序，A 在前 C 在后
+        e.shares.sort((a, b) =>
+          (a.shareClass || 'Z').localeCompare(b.shareClass || 'Z') ||
+          a.code.localeCompare(b.code)
+        );
+        arr.push({
+          key: e.key,
+          familyName: displayName,
+          type: e.type,
+          shares: e.shares,
+          shareCount: e.shares.length,
+          instNames: Array.from(e.instNameSet),
+          instCount: e.instNameSet.size,
+          bestReturn: e.bestReturn,
+        });
+      }
+      // 排序：按份额数 → 覆盖机构数 → 最佳收益（与原 fund 排序口径接近）
+      arr.sort((a, b) =>
+        b.shareCount - a.shareCount ||
+        b.instCount - a.instCount ||
+        (b.bestReturn || -999) - (a.bestReturn || -999)
+      );
+      return arr;
+    },
+
     // 经理 × 机构覆盖矩阵：把基金清单透视成"该经理在每家机构有几只 / 什么类型 / 哪些代码"
     // 用于路演排期：一眼判断要拜访哪几家、备什么物料
     managerInstMatrix() {
