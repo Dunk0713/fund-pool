@@ -2779,6 +2779,9 @@
             <div class="dot-pulse" style="display:inline-flex;gap:4px;vertical-align:middle;"><span style="width:5px;height:5px;border-radius:50%;background:var(--text-tertiary);animation:dotPulse 1.2s infinite;"></span><span style="width:5px;height:5px;border-radius:50%;background:var(--text-tertiary);animation:dotPulse 1.2s infinite 0.2s;"></span><span style="width:5px;height:5px;border-radius:50%;background:var(--text-tertiary);animation:dotPulse 1.2s infinite 0.4s;"></span></div>
             正在统计规模...
           </div>
+          <div class="pool-total-scale cell-muted" v-else-if="poolStats.failed" style="font-size:12px;">
+            规模数据暂不可用（接口超时或受限）
+          </div>
         </div>
 
         <!-- Expanded Product Section -->
@@ -5441,16 +5444,24 @@ createApp({
         return;
       }
       this.poolStatsInst = inst.id;
-      // Classify products by name heuristic first
+      // 按"产品"（A/C 合并后）统计，与机构卡片"X 只产品"口径一致
       const typeMap = { '股票': 0, '混合': 0, '债券': 0, '货币': 0, 'QDII': 0, '其他': 0 };
       const colorMap = { '股票': '#3b82f6', '混合': '#8b5cf6', '债券': '#10b981', '货币': '#f59e0b', 'QDII': '#ec4899', '其他': '#9ca3af' };
       const clsMap = { '股票': 'stock', '混合': 'mixed', '债券': 'bond', '货币': 'money', 'QDII': 'qdii', '其他': 'other' };
+      // 一个 family 只算一次：用 Set 去重份额
+      const seenFamilies = new Set();
+      // 同 family 内不同份额可能 type 不同（meta 加载状态差异）— 取多数；这里简化为遇到的第一个非空 type
+      const familyType = new Map();
       for (const p of inst.products) {
+        const key = getFundFamilyKey(p && p.name) || ('__nokey_' + (p && p.code));
+        if (seenFamilies.has(key)) continue;
+        seenFamilies.add(key);
         const cls = this.classifyProduct(p);
         if (cls in typeMap) typeMap[cls]++;
         else typeMap['其他']++;
+        familyType.set(key, cls);
       }
-      const total = inst.products.length || 1;
+      const total = seenFamilies.size || 1;
       const segments = Object.entries(typeMap)
         .filter(([, c]) => c > 0)
         .map(([type, count]) => ({
@@ -5460,40 +5471,57 @@ createApp({
           cls: clsMap[type]
         }))
         .sort((a, b) => b.count - a.count);
-      this.poolStats = { segments, totalScale: null, loading: true };
-      // Async: sample up to 20 products for scale estimation
+      this.poolStats = { segments, totalScale: null, loading: true, failed: false };
+      // 异步：抽样 20 只估算总规模；每个请求 6s 超时，整体不超过 20s（4 批 × 5s = 20s）
       const sample = inst.products.slice(0, 20);
       let scaleSum = 0, scaleCount = 0;
       const batchSize = 5;
-      for (let i = 0; i < sample.length; i += batchSize) {
-        const batch = sample.slice(i, i + batchSize);
-        const results = await Promise.allSettled(
-          batch.map(async p => {
-            try {
-              const resp = await fetch(
-                'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNFInfo?plat=Android&appType=ttjj&product=EFund&Version=1&deviceid=1&Fcodes=' + this.bareCode(p.code)
-              );
-              const json = await resp.json();
-              const fgs = json?.Datas?.[0]?.FundScale;
-              if (fgs) { const m = fgs.match(/([\d.]+)/); if (m) return parseFloat(m[1]); }
-              return null;
-            } catch (_) { return null; }
-          })
-        );
-        for (const r of results) {
-          if (r.status === 'fulfilled' && r.value != null) {
-            scaleSum += r.value;
-            scaleCount++;
+      const REQ_TIMEOUT = 6000;
+      try {
+        for (let i = 0; i < sample.length; i += batchSize) {
+          // 如果用户已经关掉/切到其他 inst，停止后续 batch
+          if (this.poolStatsInst !== inst.id) return;
+          const batch = sample.slice(i, i + batchSize);
+          const results = await Promise.allSettled(
+            batch.map(async p => {
+              const ctrl = new AbortController();
+              const tid = setTimeout(() => ctrl.abort(), REQ_TIMEOUT);
+              try {
+                const resp = await fetch(
+                  'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNFInfo?plat=Android&appType=ttjj&product=EFund&Version=1&deviceid=1&Fcodes=' + this.bareCode(p.code),
+                  { signal: ctrl.signal }
+                );
+                const json = await resp.json();
+                const fgs = json && json.Datas && json.Datas[0] && json.Datas[0].FundScale;
+                if (fgs) { const m = String(fgs).match(/([\d.]+)/); if (m) return parseFloat(m[1]); }
+                return null;
+              } catch (_) {
+                return null;
+              } finally {
+                clearTimeout(tid);
+              }
+            })
+          );
+          for (const r of results) {
+            if (r.status === 'fulfilled' && r.value != null) {
+              scaleSum += r.value;
+              scaleCount++;
+            }
           }
         }
-      }
-      if (this.poolStatsInst === inst.id && this.poolStats) {
-        if (scaleCount > 0) {
-          const avgScale = scaleSum / scaleCount;
-          const estimated = (avgScale * inst.products.length).toFixed(1);
-          this.poolStats.totalScale = estimated;
+      } finally {
+        // 不论成功失败，关闭 loading 状态，避免转圈卡死
+        if (this.poolStatsInst === inst.id && this.poolStats) {
+          if (scaleCount > 0) {
+            // 按产品数（family）估算更贴近"客户实际可投规模"，不重复算 A/C
+            const avgScale = scaleSum / scaleCount;
+            const estimated = (avgScale * total).toFixed(1);
+            this.poolStats.totalScale = estimated;
+          } else {
+            this.poolStats.failed = true;
+          }
+          this.poolStats.loading = false;
         }
-        this.poolStats.loading = false;
       }
     },
 
