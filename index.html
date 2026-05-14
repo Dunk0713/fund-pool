@@ -2388,7 +2388,7 @@
               @click="selectInstitution(inst)"
             >
               {{ inst.name }}
-              <span class="product-count">{{ inst.products.length }}只产品</span>
+              <span class="product-count" :title="instFamilyCountMap[inst.id] !== inst.products.length ? (inst.products.length + ' 个份额') : ''">{{ instFamilyCountMap[inst.id] }} 只产品</span>
             </div>
           </div>
         </div>
@@ -2470,6 +2470,7 @@
             class="chip"
             :class="{ active: quickFilter === c.key }"
             @click="quickFilter = c.key; onFundQueryInput()"
+            :title="c.shareCount !== c.count ? c.count + ' 只产品 · ' + c.shareCount + ' 个份额' : c.shareCount + ' 只产品'"
           >{{ c.label }} <span class="chip-count">{{ c.count }}</span></button>
         </div>
         <!-- Suggestions -->
@@ -2717,12 +2718,14 @@
         <!-- Print-only header (shown only during window.print() for this inst) -->
         <div class="print-header" v-if="printingInstId === inst.id">
           <div class="print-title">中欧基金 · {{ inst.name }} · 产品池清单</div>
-          <div class="print-meta">数据截至 {{ printingDate }} · 共 {{ inst.products.length }} 只产品 · 仅供机构客户内部参考 · 不构成投资建议</div>
+          <div class="print-meta">数据截至 {{ printingDate }} · 共 {{ instFamilyCountMap[inst.id] }} 只产品（{{ inst.products.length }} 个份额） · 仅供机构客户内部参考 · 不构成投资建议</div>
         </div>
         <div class="inst-header" @click="compareMode ? toggleCompareInst(inst) : toggleExpand(inst.id)">
           <div>
             <div class="inst-name">{{ inst.name }}</div>
-            <div class="inst-meta">{{ inst.products.length }} 只产品</div>
+            <div class="inst-meta">
+              {{ instFamilyCountMap[inst.id] }} 只产品<template v-if="instFamilyCountMap[inst.id] !== inst.products.length"><span class="cell-muted">（{{ inst.products.length }} 个份额）</span></template>
+            </div>
           </div>
           <div class="inst-actions" @click.stop>
             <button class="icon-btn" @click="loadPoolStats(inst)" title="概览统计" style="color:var(--brand-ink);">
@@ -3215,7 +3218,7 @@
               @click="selectImportInst(inst)"
             >
               {{ inst.name }}
-              <span class="product-count">{{ inst.products.length }}只产品</span>
+              <span class="product-count" :title="instFamilyCountMap[inst.id] !== inst.products.length ? (inst.products.length + ' 个份额') : ''">{{ instFamilyCountMap[inst.id] }} 只产品</span>
             </div>
           </div>
         </div>
@@ -3627,6 +3630,19 @@ function getFundFamilyKey(name) {
   } while (root !== prev);
   if (!root) root = String(name).trim(); // 安全网：剥得只剩空就回退原名
   return root;
+}
+
+// 数一个 products 数组里有多少只"产品"（A/C 合并后）。
+// 名字为空时回退到 code 防止把多个未补全的产品错并到一起。
+function countProductFamilies(products) {
+  if (!products || !products.length) return 0;
+  const set = new Set();
+  for (const p of products) {
+    if (!p) continue;
+    const k = getFundFamilyKey(p.name);
+    set.add(k || ('__nokey_' + (p.code || Math.random())));
+  }
+  return set.size;
 }
 
 // 从基金名末尾抽取份额类（A/C/E…）。无标识返回 ''。
@@ -4573,6 +4589,16 @@ createApp({
       return arr;
     },
 
+    // 每个机构的"产品数"（A/C 合并后）—— 用于卡片/下拉/打印的统一计数
+    // 缓存为 { instId: familyCount }，避免在 v-for 模板里重复扫
+    instFamilyCountMap() {
+      const map = {};
+      for (const inst of this.institutions) {
+        map[inst.id] = countProductFamilies(inst.products);
+      }
+      return map;
+    },
+
     // ── M3-F2.1 Quick filter chips ──────────────────────────────
     // 当前选中机构的产品分类统计 + 可投资筛选
     quickFilterChips() {
@@ -4580,16 +4606,20 @@ createApp({
       const products = this.selectedInstitution.products || [];
       // chip 仅表达"一级分类"（按投资标的性质）——
       // 流动性结构（定开）/ 成立时间（新发）属于正交维度，不应与一级分类并排
-      const counts = { all: products.length, 债券: 0, QDII: 0, 股票: 0, 混合: 0, 货币: 0, 其他: 0 };
+      // count 主显示按 family（A/C 合并后的产品数），shareCount 作为副值/tooltip
+      const fams = { all: new Set(), 债券: new Set(), QDII: new Set(), 股票: new Set(), 混合: new Set(), 货币: new Set(), 其他: new Set() };
+      const shares = { all: 0, 债券: 0, QDII: 0, 股票: 0, 混合: 0, 货币: 0, 其他: 0 };
       for (const p of products) {
         const cls = this.classifyProduct(p);
-        if (counts[cls] != null) counts[cls]++;
+        const key = getFundFamilyKey(p && p.name) || ('__nokey_' + (p && p.code));
+        fams.all.add(key); shares.all++;
+        if (fams[cls]) { fams[cls].add(key); shares[cls]++; }
       }
       const order = ['all', '债券', '股票', '混合', 'QDII', '货币', '其他'];
       const labelMap = { all: '全部' };
       return order
-        .filter(k => counts[k] > 0)
-        .map(k => ({ key: k, label: labelMap[k] || k, count: counts[k] }));
+        .filter(k => shares[k] > 0)
+        .map(k => ({ key: k, label: labelMap[k] || k, count: fams[k].size, shareCount: shares[k] }));
     },
 
     // ── M3-F2.2 Comparison ─────────────────────────────────────
