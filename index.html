@@ -2572,7 +2572,7 @@
                 <th v-for="p in [
                   { key: '1m', label: '近1月' },
                   { key: '3m', label: '近3月' },
-                  { key: '6m', label: '近6月' },
+                  { key: 'ytd', label: '今年以来' },
                   { key: '1y', label: '近1年' },
                   { key: 'all', label: '成立来' }
                 ]" :key="p.key">{{ p.label }}</th>
@@ -2582,7 +2582,7 @@
               <tr>
                 <td class="perf-row-label">收益</td>
                 <td
-                  v-for="p in ['1m','3m','6m','1y','all']"
+                  v-for="p in ['1m','3m','ytd','1y','all']"
                   :key="'r-'+p"
                   class="perf-value num"
                   :class="returnClass(fundDetail.returns[p])"
@@ -2591,7 +2591,7 @@
               <tr v-if="fundDetail.drawdowns">
                 <td class="perf-row-label">最大回撤</td>
                 <td
-                  v-for="p in ['1m','3m','6m','1y','all']"
+                  v-for="p in ['1m','3m','ytd','1y','all']"
                   :key="'d-'+p"
                   class="perf-value perf-dd num"
                   :title="'区间内最大回撤'"
@@ -2900,7 +2900,7 @@
               <tr v-for="p in [
                 { key: '1m', label: '近1月' },
                 { key: '3m', label: '近3月' },
-                { key: '6m', label: '近6月' },
+                { key: 'ytd', label: '今年以来' },
                 { key: '1y', label: '近1年' },
                 { key: 'all', label: '成立来' }
               ]" :key="p.key">
@@ -4081,7 +4081,7 @@ function fetchFundMeta(bare, opts) {
       if (nwtArr && nwtArr.length > 1) {
         const lastNav = nwtArr[nwtArr.length - 1].y;
         const lastTs = nwtArr[nwtArr.length - 1].x;
-        const periods = { '1m': 30, '3m': 90, '6m': 180, '1y': 365, 'all': Infinity };
+        const periods = { '1m': 30, '3m': 90, 'ytd': 'ytd', '1y': 365, 'all': Infinity };
         // 辅助：在 [startIdx, endIdx] 区间内计算最大回撤（以净值序列为基础）
         const computeMaxDD = (startIdx, endIdx) => {
           let peak = -Infinity;
@@ -4102,6 +4102,17 @@ function fetchFundMeta(bare, opts) {
           if (days === Infinity) {
             const firstNav = nwtArr[0].y;
             if (firstNav > 0) returns[key] = ((lastNav - firstNav) / firstNav * 100).toFixed(2);
+          } else if (days === 'ytd') {
+            // 今年以来：以去年最后一个净值为基准（今年内成立则用首个净值）
+            const yearStart = new Date(new Date(lastTs).getFullYear(), 0, 1).getTime();
+            let baseI = -1;
+            for (let i = nwtArr.length - 1; i >= 0; i--) {
+              if (nwtArr[i].x < yearStart) { baseI = i; break; }
+            }
+            if (baseI < 0) baseI = 0;
+            startIdx = (baseI === 0 && nwtArr[0].x >= yearStart) ? 0 : Math.min(baseI + 1, nwtArr.length - 1);
+            const base = nwtArr[baseI];
+            if (base.y > 0) returns[key] = ((lastNav - base.y) / base.y * 100).toFixed(2);
           } else {
             const target = lastTs - days * 24 * 3600 * 1000;
             let closestI = 0;
