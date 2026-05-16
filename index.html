@@ -2574,8 +2574,8 @@
                   { key: '3m', label: '近3月' },
                   { key: 'ytd', label: '今年以来' },
                   { key: '1y', label: '近1年' },
-                  { key: 'all', label: '成立来' }
-                ]" :key="p.key">{{ p.label }}</th>
+                  { key: 'all', label: '成立来年化', tip: '成立以来年化收益率（几何年化）；成立不足1年展示累计收益' }
+                ]" :key="p.key" :title="p.tip">{{ p.label }}</th>
               </tr>
             </thead>
             <tbody>
@@ -2902,9 +2902,9 @@
                 { key: '3m', label: '近3月' },
                 { key: 'ytd', label: '今年以来' },
                 { key: '1y', label: '近1年' },
-                { key: 'all', label: '成立来' }
+                { key: 'all', label: '成立来年化', tip: '成立以来年化收益率（几何年化）；成立不足1年展示累计收益' }
               ]" :key="p.key">
-                <td>{{ p.label }}</td>
+                <td :title="p.tip">{{ p.label }}</td>
                 <td v-for="f in compareData" :key="f.code"
                     :class="{ best: isBestReturn(f, p.key) }">
                   {{ formatReturn(f.returns && f.returns[p.key]) }}
@@ -4100,8 +4100,17 @@ function fetchFundMeta(bare, opts) {
         for (const [key, days] of Object.entries(periods)) {
           let startIdx = 0;
           if (days === Infinity) {
+            // 成立来年化：满1年用几何年化，不足1年回退累计收益（短期年化会失真）
             const firstNav = nwtArr[0].y;
-            if (firstNav > 0) returns[key] = ((lastNav - firstNav) / firstNav * 100).toFixed(2);
+            if (firstNav > 0) {
+              const totalRet = (lastNav - firstNav) / firstNav;
+              const spanDays = (lastTs - nwtArr[0].x) / 86400000;
+              if (spanDays >= 365) {
+                returns[key] = ((Math.pow(1 + totalRet, 365.25 / spanDays) - 1) * 100).toFixed(2);
+              } else {
+                returns[key] = (totalRet * 100).toFixed(2);
+              }
+            }
           } else if (days === 'ytd') {
             // 今年以来：以去年最后一个净值为基准（今年内成立则用首个净值）
             const yearStart = new Date(new Date(lastTs).getFullYear(), 0, 1).getTime();
