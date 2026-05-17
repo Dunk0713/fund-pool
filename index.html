@@ -1391,6 +1391,19 @@
       border-color: var(--primary);
       color: var(--primary);
     }
+    .preview-table input.name-mismatch {
+      border-color: var(--danger);
+      color: var(--danger);
+      background: #fff5f5;
+    }
+    .name-mismatch-hint {
+      margin-top: 4px;
+      font-size: 12px;
+      line-height: 1.5;
+      color: #6b7280;
+    }
+    .name-mismatch-hint .mm-official { color: var(--danger); font-weight: 600; }
+    .name-mismatch-hint .mm-warn { color: var(--danger); margin-top: 2px; }
 
     /* ── 3.7 Upload Zones ──────────────────────────────────────── */
     .upload-zone {
@@ -2574,7 +2587,7 @@
                   { key: '3m', label: '近3月' },
                   { key: 'ytd', label: '今年以来' },
                   { key: '1y', label: '近1年' },
-                  { key: 'all', label: '成立来年化', tip: '成立以来年化收益率（几何年化）；成立不足1年展示累计收益' }
+                  { key: 'all', label: '成立来年化', tip: '成立以来年化收益率（累计净值口径·含分红·几何年化）；成立不足1年展示累计收益' }
                 ]" :key="p.key" :title="p.tip">{{ p.label }}</th>
               </tr>
             </thead>
@@ -3317,8 +3330,12 @@
                 <td><input v-model="p.code" :class="{warn: !isValidCode(p.code)}"></td>
                 <td>
                   <input v-model="p.name"
-                         :class="{'name-corrected': p.nameCorrected}"
+                         :class="{'name-corrected': p.nameCorrected, 'name-mismatch': p.verifyStatus === 'mismatch'}"
                          :title="p.nameCorrected ? '已自动修正为官方名称，可手动编辑' : ''">
+                  <div v-if="p.verifyStatus === 'mismatch'" class="name-mismatch-hint">
+                    识别名：{{ p.ocrName }}　／　官方名：<span class="mm-official">{{ p.officialName }}</span>
+                    <div class="mm-warn">⚠ 代码可能识别错误，请人工核对后再勾选导入</div>
+                  </div>
                 </td>
                 <td style="text-align:center;vertical-align:middle;">
                   <span class="vstatus vstatus-checking" v-if="p.verifyStatus === 'checking'" title="核对中…">···</span>
@@ -3330,6 +3347,9 @@
                   <span class="vstatus vstatus-err"
                         v-else-if="p.verifyStatus === 'notfound'"
                         title="天天基金未收录该代码，名称无法自动修正，请人工核查">?</span>
+                  <span class="vstatus vstatus-err"
+                        v-else-if="p.verifyStatus === 'mismatch'"
+                        :title="'识别名「' + p.ocrName + '」与官方名「' + p.officialName + '」差异过大，代码可能识别错误，请人工核对'">⚠</span>
                   <span class="vstatus vstatus-inpool"
                         v-else-if="p.verifyStatus === 'inpool'"
                         title="该代码已在目标机构产品池中，默认不重复导入">已在池</span>
@@ -3937,7 +3957,7 @@ const _fundMetaQueue = new PromiseQueue(4);
 
 // ── 持久化 meta 缓存（localStorage，按交易日刷新） ──────────────────────
 const META_CACHE_KEY = 'zojg_fund_meta_v1';
-const META_SCHEMA_VERSION = 1;
+const META_SCHEMA_VERSION = 2;
 const TRADING_DAY_CLOSE_HOUR = 20; // 东财 pingzhongdata 20:00 后发布当日净值
 const META_CACHE_MAX = 300;        // 容量上限；超出按 fetchedAt 淘汰
 
@@ -4101,9 +4121,23 @@ function fetchFundMeta(bare, opts) {
           let startIdx = 0;
           if (days === Infinity) {
             // 成立来年化：满1年用几何年化，不足1年回退累计收益（短期年化会失真）
-            const firstNav = nwtArr[0].y;
-            if (firstNav > 0) {
-              const totalRet = (lastNav - firstNav) / firstNav;
+            // 总收益走累计净值口径（含分红，修正单位净值对分红型产品的严重低估）。
+            // 不用 Data_grandTotal（仅近半年截断窗口）/ equityReturn 连乘（2位小数累乘漂移）。
+            let totalRet = null;
+            const ac = window.Data_ACWorthTrend; // [[ts, 累计净值], …]
+            if (Array.isArray(ac) && ac.length > 1) {
+              const acFirst = ac[0] && ac[0][1];
+              const acLast = ac[ac.length - 1] && ac[ac.length - 1][1];
+              if (acFirst > 0 && acLast != null && !isNaN(acLast)) {
+                totalRet = (acLast - acFirst) / acFirst;
+              }
+            }
+            // 兜底：单位净值首末值（无累计净值数据时）
+            if (totalRet == null) {
+              const firstNav = nwtArr[0].y;
+              if (firstNav > 0) totalRet = (lastNav - firstNav) / firstNav;
+            }
+            if (totalRet != null) {
               const spanDays = (lastTs - nwtArr[0].x) / 86400000;
               if (spanDays >= 365) {
                 returns[key] = ((Math.pow(1 + totalRet, 365.25 / spanDays) - 1) * 100).toFixed(2);
@@ -6057,6 +6091,7 @@ createApp({
         entries.push({
           code,
           name: (nameCand || '未识别名称').replace(/\s+/g, ''),
+          ocrName: (nameCand || '').replace(/\s+/g, ''),
           selected: !inPool,
           verifyStatus: inPool ? 'inpool' : null,
           officialName: '',
@@ -6450,6 +6485,54 @@ createApp({
     },
 
     // ── Fund verification ────────────────────────────────────────
+    // 两个中文名的相似度：字符集合 Jaccard 与最长公共子串占比取较大者，∈[0,1]
+    _nameSimilarity(a, b) {
+      a = String(a || ''); b = String(b || '');
+      if (!a || !b) return 0;
+      if (a === b) return 1;
+      const sa = new Set(a.split('')), sb = new Set(b.split(''));
+      let inter = 0;
+      sa.forEach(ch => { if (sb.has(ch)) inter++; });
+      const jac = inter / (sa.size + sb.size - inter);
+      const m = a.length, n = b.length;
+      let best = 0;
+      const dp = new Array(n + 1).fill(0);
+      for (let i = 1; i <= m; i++) {
+        let prev = 0;
+        for (let j = 1; j <= n; j++) {
+          const tmp = dp[j];
+          if (a[i - 1] === b[j - 1]) { dp[j] = prev + 1; if (dp[j] > best) best = dp[j]; }
+          else dp[j] = 0;
+          prev = tmp;
+        }
+      }
+      const lcs = best / Math.min(m, n);
+      return Math.max(jac, lcs);
+    },
+    // 二次勘误：官方名与 OCR 识别名差异过大 → 代码很可能识别错，标记可疑
+    _applyVerifiedName(p, officialName) {
+      if (!officialName) { p.verifyStatus = 'ok'; return; }
+      p.officialName = officialName;
+      const ocr = (p.ocrName || '').replace(/\s+/g, '');
+      const comparable = ocr && ocr !== '未识别名称';
+      const sim = comparable ? this._nameSimilarity(ocr, officialName) : 1;
+      // 公司前缀（前2字）是否有交集——「混合A/债券C」等通用后缀会虚高相似度，
+      // 跨公司错配（中欧→嘉实）需靠前缀兜住
+      const pa = new Set(ocr.slice(0, 2).split(''));
+      const prefixShare = officialName.slice(0, 2).split('').some(ch => pa.has(ch));
+      // 可疑判定：相似度极低，或中等但公司前缀不同（很可能整只基金都识别错）
+      const suspect = comparable && (sim < 0.34 || (sim < 0.6 && !prefixShare));
+      if (suspect) {
+        p.name = ocr;            // 保留 OCR 名，便于人工肉眼对照
+        p.nameCorrected = false;
+        p.verifyStatus = 'mismatch';
+        p.selected = false;      // 默认不勾选，需人工确认
+      } else {
+        p.name = officialName;
+        p.nameCorrected = true;
+        p.verifyStatus = 'ok';
+      }
+    },
     async verifySingleFund(p) {
       const bare = this.bareCode(p.code);
       try {
@@ -6470,24 +6553,14 @@ createApp({
 
         if (hit) {
           const officialName = (hit.NAME || hit.FundFullName || hit.FundName || hit.name || '').replace(/\s+/g, '');
-          if (officialName) {
-            p.officialName = officialName;
-            p.name = officialName;
-            p.nameCorrected = true;
-          }
-          p.verifyStatus = 'ok';
+          this._applyVerifiedName(p, officialName);
           return;
         }
 
         const gz = await fundgzLookup(bare);
         if (gz && gz.fundcode === bare) {
           const officialName = (gz.name || '').replace(/\s+/g, '');
-          if (officialName) {
-            p.officialName = officialName;
-            p.name = officialName;
-            p.nameCorrected = true;
-          }
-          p.verifyStatus = 'ok';
+          this._applyVerifiedName(p, officialName);
         } else {
           p.verifyStatus = 'notfound';
         }
