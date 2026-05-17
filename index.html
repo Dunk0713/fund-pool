@@ -5063,7 +5063,28 @@ createApp({
           results.push({ ...p, score: bestScore });
         }
       }
-      results.sort((a, b) => b.score - a.score);
+      // 先按 family 归组：同一产品的 A/C/D/E 等份额连续排列。
+      // family 排序键 = 该 family 内最高分（保证最佳匹配的产品整体靠前），
+      // 同分 family 按首次出现顺序稳定排列；family 内按份额字母 A→C→D→E、再按代码。
+      const famBest = new Map();
+      const famFirst = new Map();
+      results.forEach((r, i) => {
+        const fk = getFundFamilyKey(r.name) || ('__c_' + r.code);
+        r._fk = fk;
+        if (!famBest.has(fk) || r.score > famBest.get(fk)) famBest.set(fk, r.score);
+        if (!famFirst.has(fk)) famFirst.set(fk, i);
+      });
+      results.sort((a, b) => {
+        if (a._fk !== b._fk) {
+          const sd = famBest.get(b._fk) - famBest.get(a._fk);
+          if (sd !== 0) return sd;
+          return famFirst.get(a._fk) - famFirst.get(b._fk);
+        }
+        const la = getShareClassLetter(a.name) || 'Z';
+        const lb = getShareClassLetter(b.name) || 'Z';
+        if (la !== lb) return la.localeCompare(lb);
+        return (a.code || '').localeCompare(b.code || '');
+      });
       this.fundSuggestions = results.slice(0, hasQ ? 8 : 40);
     },
 
