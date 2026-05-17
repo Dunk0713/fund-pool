@@ -3835,6 +3835,31 @@ function fetchFundType(bare) {
   ]);
 }
 
+// ── 精确二级分类（产品卡片标签用）─────────────────────────────────────────
+//   fundcode_search.js 的 type 只到一级粒度（债券型/股票型/混合型），
+//   产品内部信息要显示真二级分类（如「中长期纯债型」「偏股混合型」）。
+//   走 FundMNBasicInformation 的 FTYPE 字段；失败返回 null，由调用方回退到
+//   coarse fetchFundType。历史上这个调用在迭代中被丢失，导致标签退化为一级。
+function fetchFundSubType(bare) {
+  const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch(e) {} }, 5000) : null;
+  return fetch(
+    'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNBasicInformation?plat=Android&appType=ttjj&product=EFund&Version=1&deviceid=1&FCODE=' + bare,
+    ctrl ? { signal: ctrl.signal } : undefined
+  ).then(resp => {
+    if (!resp.ok) return null;
+    return resp.json();
+  }).then(json => {
+    const ftype = json && json.Datas && json.Datas.FTYPE;
+    if (typeof ftype === 'string' && ftype.trim()) {
+      return ftype.trim().replace(/基金$/, '');
+    }
+    return null;
+  }).catch(() => null).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 // ── 分类权威函数：一次返回一级(primary, for chip)/二级(secondary, for tag) ──
 //   消除 classifyProduct / pingzhongdata 派生里顺序敏感的 regex 降级陷阱
 //   e.g. "指数型-固收" 必须归「债券」而非「股票」
@@ -5178,13 +5203,15 @@ createApp({
       if (!needRefresh) return;
       // 3) 后台拉取最新
       try {
-        const [meta, apiType, holdings, latestNavInfo] = await Promise.all([
+        const [meta, subType, apiType, holdings, latestNavInfo] = await Promise.all([
           fetchFundMeta(bare, { force: !!persisted }),
-          fetchFundType(bare),
+          fetchFundSubType(bare),    // 精确二级分类（产品卡片标签优先用）
+          fetchFundType(bare),       // coarse 一级粒度，二级取不到时兜底
           fetchFundHoldings(bare),
           fetchLatestNavInfo(bare),  // 移动端 JSON API，通常比 pingzhongdata 更新及时
         ]);
-        if (apiType) meta.type = apiType;
+        if (subType) meta.type = subType;
+        else if (apiType) meta.type = apiType;
         if (holdings && holdings.length > 0) meta.topHoldings = holdings;
         // 用 JSON API 的最新净值覆写 — 仅当 navDate 更新时才覆写，
         // 避免把 pingzhongdata 的完整序列搞乱
