@@ -3420,14 +3420,10 @@ const SUPABASE_URL = 'https://rghlkwmarqfyksaztang.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJnaGxrd21hcnFmeWtzYXp0YW5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwODk5MTcsImV4cCI6MjA4OTY2NTkxN30.cbwWMVYhPpOuqFcU1ZzvB0Y_S7tqK_E8tBJMBwGebis';
 
 // SHA-256 hash of the access password — change this to update the password
-// Current password: jgywb
 const PASSWORD_HASH = '5bad5c1d07c928e082585b6332f72cd6bd91c94da4a442cfc80f5b62ebb71497';
 
 // Session validity: 12 hours
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
-
-// Request signing secret (used to make direct API abuse harder)
-const SIGN_SECRET = 'zojg_fund_pool_2024';
 
 // ── SVG Icon Set (线性描边 1.5，尺寸默认 24 × 24，由外层控制) ────────
 // 统一用 currentColor 便于 CSS 控制颜色；使用 v-html 在模板中引用
@@ -3494,13 +3490,6 @@ function destroySession() {
 
 const db_client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ── Request signing: adds X-Signature header to make raw API calls harder ──
-// HMAC-like signature: SHA-256(secret + timestamp + action)
-async function signRequest(action) {
-  const ts = Math.floor(Date.now() / 30000); // 30-second window
-  return await sha256(SIGN_SECRET + ':' + ts + ':' + action);
-}
-
 // ── Unified error handler ──────────────────────────────────────────────────
 function handleError(context, error) {
   const msg = error?.message || String(error);
@@ -3526,7 +3515,6 @@ function cacheSet(data) {
 const DB = {
   async load() {
     try {
-      const sig = await signRequest('load');
       const { data, error } = await db_client
         .from('institutions')
         .select('*')
@@ -3556,7 +3544,6 @@ const DB = {
 
   async upsert(inst) {
     try {
-      const sig = await signRequest('upsert');
       const { error } = await db_client.from('institutions').upsert({
         id: inst.id,
         name: inst.name,
@@ -3573,7 +3560,6 @@ const DB = {
 
   async remove(id) {
     try {
-      const sig = await signRequest('remove');
       const { error } = await db_client.from('institutions').delete().eq('id', id);
       if (error) throw error;
       return true;
@@ -5009,11 +4995,13 @@ createApp({
         }
         // 名称模糊匹配兜底（仅当代码未命中且查询非纯代码时）
         if (!hit && !isPureCode) {
+          let bestScore = -1;
           for (const p of (inst.products || [])) {
             const nameMatch = fuzzyMatch(qRaw, p.name || '');
-            const mgrMatch = p.manager ? fuzzyMatch(qRaw, p.manager) : { match: false };
+            const mgrMatch = p.manager ? fuzzyMatch(qRaw, p.manager) : { match: false, score: 0 };
             if (nameMatch.match || mgrMatch.match) {
-              if (!hit || nameMatch.score > 0) hit = p;
+              const sc = Math.max(nameMatch.score, mgrMatch.score || 0);
+              if (sc > bestScore) { bestScore = sc; hit = p; }
             }
           }
         }
@@ -5666,19 +5654,11 @@ createApp({
         badges.push({ label: '外汇风险', tip: 'QDII 基金涉及外汇敞口，受汇率波动影响' });
       }
       // 2) 规模偏小 — 清盘风险
-      if (detail && typeof detail.fundSize === 'number' && detail.fundSize > 0 && detail.fundSize < 0.5) {
-        // fundSize 约定单位为亿元；< 0.5 亿 = 5000 万
+      // meta 的规模字段是 scale（来自 Data_fluctuationScale，单位亿元），
+      // 历史误写成 detail.fundSize（meta 上不存在该字段）→ 此徽章一直不触发
+      const _scaleNum = detail ? parseFloat(detail.scale) : NaN;
+      if (!isNaN(_scaleNum) && _scaleNum > 0 && _scaleNum < 0.5) {
         badges.push({ label: '规模偏小', tip: '最新披露规模 < 5000 万元，关注清盘风险' });
-      } else if (detail && typeof detail.fundSize === 'string') {
-        const m = detail.fundSize.match(/([\d.]+)\s*(亿|万)/);
-        if (m) {
-          const num = parseFloat(m[1]);
-          const unit = m[2];
-          const yi = unit === '万' ? num / 10000 : num;
-          if (yi > 0 && yi < 0.5) {
-            badges.push({ label: '规模偏小', tip: '最新披露规模 < 5000 万元，关注清盘风险' });
-          }
-        }
       }
       // 3) 经理任职 < 1 年
       if (detail && Array.isArray(detail.managerDetails) && detail.managerDetails.length > 0) {
@@ -5724,7 +5704,7 @@ createApp({
           最新净值: meta.latestNav != null ? Number(meta.latestNav).toFixed(4) : '',
           近1年收益: (meta.returns && meta.returns['1y'] != null) ? Number(meta.returns['1y']).toFixed(2) + '%' : '',
           近1年最大回撤: (meta.drawdowns && meta.drawdowns['1y'] != null) ? Number(meta.drawdowns['1y']).toFixed(2) + '%' : '',
-          规模: meta.fundSize || '',
+          规模: (meta.scale != null && !isNaN(parseFloat(meta.scale))) ? parseFloat(meta.scale).toFixed(2) + '亿' : '',
           备注: p.note || ''
         };
       });
@@ -6555,10 +6535,6 @@ createApp({
 
     bareCode(code) {
       return code.replace(/\.\w{2,3}$/i, '');
-    },
-
-    fundNameKey(name) {
-      return name.replace(/\s+/g, '').replace(/[A-Za-z0-9（）()【】]/g, '').slice(0, 6);
     },
 
     // ── Fund verification ────────────────────────────────────────
