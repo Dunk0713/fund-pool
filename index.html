@@ -6078,14 +6078,27 @@ createApp({
         if (!isLikelyFundCode(c.code)) continue;
         const code = this.normalizeCode(c.code);
         if (seen.has(code)) continue;
-        // 名字候选：到下一个代码起点（含跨行）
+        // 名字候选：与代码「同属一行」（表格每行 = 名称 + 代码）。
+        // 关键修复：截图常见「名称在前、代码在后」布局，旧逻辑只取"代码之后"
+        // 的中文，会把第 N 行代码错配到第 N+1 行名称（整体错位一行）→ 海量误判。
+        // 现按代码所在行取名，名称在前/在后两种布局都正确；代码识别逻辑不变。
+        const prevEnd = i > 0 ? candidates[i - 1].endIdx : 0;
         const nextStart = i + 1 < candidates.length ? candidates[i + 1].startIdx : text.length;
-        const between = text.slice(endIdx, nextStart);
-        let nameCand = this._firstChineseName(between);
-        if (!nameCand && i === 0) {
-          // 首个代码若其后无中文，回退到代码之前
-          nameCand = this._lastChineseName(text.slice(0, c.startIdx));
-        }
+        let lineStart = text.lastIndexOf('\n', c.startIdx - 1) + 1; // 无换行则 0
+        const nlAfter = text.indexOf('\n', endIdx);
+        let lineEnd = nlAfter === -1 ? text.length : nlAfter;
+        if (lineStart < prevEnd) lineStart = prevEnd; // 不越过上一个代码
+        if (lineEnd > nextStart) lineEnd = nextStart; // 不越过下一个代码
+        // 同行内挖掉代码本身与残留数字串（列号/装饰条等），剩余即名称
+        const lineSeg = (text.slice(lineStart, c.startIdx) + ' ' + text.slice(endIdx, lineEnd))
+          .replace(/\d{3,}/g, ' ');
+        let nameCand = this._firstChineseName(lineSeg);
+        // 兜底1：同行无中文 → 取代码前方相邻文本最后一个名（名称在前但跨行）
+        if (!nameCand) nameCand = this._lastChineseName(text.slice(prevEnd, c.startIdx));
+        // 兜底2：仍无 → 旧逻辑：取代码之后（名称在后布局）
+        if (!nameCand) nameCand = this._firstChineseName(text.slice(endIdx, nextStart));
+        // 兜底3：首个代码取其之前
+        if (!nameCand && i === 0) nameCand = this._lastChineseName(text.slice(0, c.startIdx));
         seen.add(code);
         const inPool = !!(existingCodes && existingCodes.has(code));
         entries.push({
