@@ -3315,6 +3315,9 @@
           <button class="btn btn-sm btn-outline" @click="filterKeepVerified" :disabled="!hasUnverifiedPreview" title="移除核对失败 / 未识别名称的行">
             仅保留已核对
           </button>
+          <button class="btn btn-sm btn-outline" @click="toggleSelectFlagged" :disabled="!hasUnverifiedPreview" title="一键勾选/取消勾选所有待核对（可疑、未收录、未识别）的行，省去逐个手动勾选">
+            全选待核对 ({{ previewProducts.filter(p => !p.inPool && p.verifyStatus !== 'ok').length }})
+          </button>
           <button class="btn btn-sm btn-outline" @click="filterKeepNew" :disabled="!hasInPoolPreview" title="移除已在该机构池中的行（避免误导入）">
             移除已在池
           </button>
@@ -6099,6 +6102,19 @@ createApp({
         if (!nameCand) nameCand = this._firstChineseName(text.slice(endIdx, nextStart));
         // 兜底3：首个代码取其之前
         if (!nameCand && i === 0) nameCand = this._lastChineseName(text.slice(0, c.startIdx));
+        // 名称被 OCR 拆行修复：同行名过短（<4 汉字，几乎必为拆行碎片，如
+        // "中欧中证A500指"换行"数-C 022433" 只剩 "数-C"）→ 补回上一行尾部的名头。
+        // 仅在碎片时触发，已正确的长名不受影响；越界由 prevEnd 兜住不会窜行。
+        const cjkCount = s => (String(s).match(/[㐀-鿿]/g) || []).length;
+        if (nameCand && cjkCount(nameCand) < 4) {
+          const head = this._lastChineseName(
+            text.slice(prevEnd, lineStart).replace(/\d{3,}/g, ' ').replace(/\s+$/, '')
+          );
+          if (head && cjkCount(head) >= 2 && (head.length + nameCand.length) <= 40) {
+            const merged = this._firstChineseName(head + nameCand);
+            if (merged && cjkCount(merged) > cjkCount(nameCand)) nameCand = merged;
+          }
+        }
         seen.add(code);
         const inPool = !!(existingCodes && existingCodes.has(code));
         entries.push({
@@ -6614,6 +6630,18 @@ createApp({
       this.previewProducts = this.previewProducts.filter(p => !p.inPool);
       const removed = before - this.previewProducts.length;
       this.showToast(removed > 0 ? `已移除 ${removed} 条池内重复` : '没有需要移除的行');
+    },
+
+    // 一键勾选/取消勾选全部待核对行（可疑 mismatch / 未收录 notfound / 未核对 null）
+    // 待核对默认不勾选，逐个手动勾太慢；此处一键切换
+    toggleSelectFlagged() {
+      const flagged = this.previewProducts.filter(p => !p.inPool && p.verifyStatus !== 'ok');
+      if (flagged.length === 0) { this.showToast('没有待核对的行'); return; }
+      const allSelected = flagged.every(p => p.selected);
+      flagged.forEach(p => { p.selected = !allSelected; });
+      this.showToast(allSelected
+        ? `已取消勾选 ${flagged.length} 条待核对`
+        : `已勾选 ${flagged.length} 条待核对，请人工核对后再导入`);
     },
 
     normalizeCode(code) {
