@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>中欧基金 · 机构产品池查询</title>
 
   <!-- ═══════════════════════════════════════════════════════════════
@@ -249,6 +249,27 @@
       font-family: inherit;
     }
     .logout-btn:hover { color: var(--danger); border-color: var(--danger); }
+
+    /* ── 2.1b 离线/缓存态横幅 ──────────────────────────────────── */
+    .offline-banner {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 16px;
+      font-size: var(--fs-xs);
+      line-height: 1.4;
+      color: var(--warn);
+      background: var(--warn-soft);
+      border-bottom: 1px solid var(--ink-200);
+      position: sticky;
+      top: 53px; /* 紧贴 header 下沿 */
+      z-index: 99;
+    }
+    .offline-banner svg { width: 14px; height: 14px; flex-shrink: 0; }
+    .offline-banner--error {
+      color: var(--pos);
+      background: var(--pos-soft);
+    }
 
     /* ── 2.2 Container ─────────────────────────────────────────── */
     .container {
@@ -2363,6 +2384,16 @@
       </div>
     </div>
 
+    <!-- 离线/缓存态横幅 — 云端不可用时常驻提示，避免用户误以为数据已最新 -->
+    <div class="offline-banner" v-if="dataSource === 'cache'">
+      <span v-html="ICONS.alertTriangle"></span>
+      云端暂不可用，正显示本地缓存数据（可能不是最新）。修改将先存本地，恢复后自动同步。
+    </div>
+    <div class="offline-banner offline-banner--error" v-else-if="dataSource === 'empty'">
+      <span v-html="ICONS.alertTriangle"></span>
+      无法连接云端且本地无缓存数据，请检查网络后刷新页面。
+    </div>
+
     <!-- Query View -->
     <div class="container" v-if="currentView === 'query'">
       <!-- 查询模式切换：单家 vs 跨我覆盖的全部机构 -->
@@ -3513,6 +3544,9 @@ function cacheSet(data) {
 
 // ── DB object with dual-layer storage ──────────────────────────────────────
 const DB = {
+  // 最近一次 load 的数据来源，供 UI 决定是否显示离线提示
+  // 'live' = 云端最新 ｜ 'cache' = Supabase 不可用回退本地缓存 ｜ 'empty' = 既无云端也无缓存
+  _source: 'live',
   async load() {
     try {
       const { data, error } = await db_client
@@ -3529,6 +3563,7 @@ const DB = {
       }));
       // Update local cache on successful load
       cacheSet(result);
+      this._source = 'live';
       return result;
     } catch (e) {
       handleError('DB.load', e);
@@ -3536,8 +3571,10 @@ const DB = {
       const cached = cacheGet();
       if (cached) {
         console.warn('Supabase不可用，使用本地缓存 (' + cached.length + ' 条)');
+        this._source = 'cache';
         return cached;
       }
+      this._source = 'empty';
       return [];
     }
   },
@@ -4309,6 +4346,8 @@ createApp({
 
       currentView: 'query',
       institutions: [],
+      // 数据来源：'live' 云端最新 / 'cache' 本地缓存(离线) / 'empty' 无数据
+      dataSource: 'live',
 
       // Query
       instSearchText: '',
@@ -4826,6 +4865,13 @@ createApp({
       } catch (e) {
         this.showToast(handleError('loadData', e));
       }
+      // 数据来源标记 —— DB.load 内部已吞掉异常，离线只能靠此 flag 暴露给用户
+      this.dataSource = DB._source;
+      if (DB._source === 'cache') {
+        this.showToast('云端不可用，当前为本地缓存数据（可能不是最新）', { duration: 4000 });
+      } else if (DB._source === 'empty') {
+        this.showToast('无法连接云端且本地无缓存，请检查网络后刷新', { duration: 5000 });
+      }
       // 数据加载完后恢复 UI 状态（机构 id 若已不存在则忽略）
       this._restoreUiState();
       // 预热：浏览器空闲时拉取未缓存/陈旧的基金 meta（受并发池 4 路限流）
@@ -4835,18 +4881,31 @@ createApp({
     },
 
     _prewarmMeta() {
-      const codes = new Set();
-      (this.institutions || []).forEach(i =>
-        (i.products || []).forEach(p => { if (p.code) codes.add(String(p.code).trim()); })
-      );
+      // 上限与 META_CACHE_MAX(300) 配合：机构多、产品多时，原先全量预热会一次性
+      // 注入数百个 script 请求 + 撑爆缓存触发 LRU 颠簸（拉了又被淘汰，下次再拉）。
+      // 收敛策略：选中机构产品优先（最可能马上被查），其余机构其后，整体设上限。
+      const PREWARM_MAX = 80;
+      const ordered = [];
+      const seen = new Set();
+      const pushCodes = (inst) => {
+        ((inst && inst.products) || []).forEach(p => {
+          const c = p.code && String(p.code).trim();
+          if (c && !seen.has(c)) { seen.add(c); ordered.push(c); }
+        });
+      };
+      if (this.selectedInstitution) pushCodes(this.selectedInstitution);
+      (this.institutions || []).forEach(pushCodes);
       const items = loadMetaCache();
-      codes.forEach(code => {
+      let budget = PREWARM_MAX;
+      for (const code of ordered) {
+        if (budget <= 0) break;
         const bare = this.bareCode(code);
         const entry = items[bare];
-        if (entry && isFreshMeta(entry)) return; // 已新鲜 → 跳过
+        if (entry && isFreshMeta(entry)) continue; // 已新鲜 → 跳过，不耗预算
+        budget--;
         // 进队列，不 await — 并发池自动 4 路处理（低优先级，让位用户触发的请求）
         fetchFundMeta(bare, { priority: 'low' }).catch(() => {});
-      });
+      }
     },
 
     async saveInst(inst) {
